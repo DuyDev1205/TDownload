@@ -231,6 +231,31 @@ select:focus {
   margin: 2px 0 6px;
 }
 
+/* Thông báo có bản app mới */
+.app-update {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.app-update .text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-update small {
+  color: var(--muted);
+}
+
+.app-update .error {
+  margin: 0;
+}
+
 /* Cài đặt */
 .settings {
   display: flex;

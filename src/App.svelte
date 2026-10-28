@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { getVersion } from "@tauri-apps/api/app";
   import { downloadDir } from "@tauri-apps/api/path";
   import { readText } from "@tauri-apps/plugin-clipboard-manager";
   import { open as openDialog } from "@tauri-apps/plugin-dialog";
   import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener";
+  import { relaunch } from "@tauri-apps/plugin-process";
+  import { check, type Update } from "@tauri-apps/plugin-updater";
   import * as api from "./lib/api";
   import type { DepsProgress, DepsStatus, DlDone, DlProgress, Mode, VideoInfo } from "./lib/api";
   import { SITE_NAME, extractUrl, fmtBytes, fmtDuration, fmtQuality, isKnownSite, siteOf } from "./lib/format";
@@ -69,7 +72,14 @@
   let items = $state<Item[]>([]);
   let lastAutoPaste = "";
 
+  let appVersion = $state("");
+  let appUpdate = $state.raw<Update | null>(null);
+  let appUpdating = $state(false);
+  let appUpdatePercent = $state<number | null>(null);
+  let appUpdateMsg = $state("");
+
   const hasFinished = $derived(items.some((i) => ["done", "error", "canceled"].includes(i.status)));
+  const busy = $derived(items.some((i) => ["queued", "downloading", "processing"].includes(i.status)));
 
   $effect(() => {
     save("mode", mode);
@@ -87,6 +97,8 @@
       api.onDone(onDone),
     ];
     window.addEventListener("focus", autoPaste);
+    getVersion().then((v) => (appVersion = v));
+    checkAppUpdate(true);
 
     (async () => {
       if (!outDir) outDir = await downloadDir();
@@ -135,6 +147,39 @@
       updateMsg = `Lỗi: ${e}`;
     } finally {
       updating = false;
+    }
+  }
+
+  /** Hỏi GitHub Releases xem có bản app mới không. `quiet`: lúc mở app thì không báo gì nếu không có bản mới hay lỗi mạng. */
+  async function checkAppUpdate(quiet = false) {
+    appUpdateMsg = "";
+    try {
+      appUpdate = await check();
+      if (!appUpdate && !quiet) appUpdateMsg = "Bạn đang dùng bản mới nhất.";
+    } catch (e) {
+      if (!quiet) appUpdateMsg = `Không kiểm tra được bản mới: ${e}`;
+    }
+  }
+
+  async function installAppUpdate() {
+    if (!appUpdate || busy) return;
+    appUpdating = true;
+    appUpdatePercent = null;
+    appUpdateMsg = "";
+    let total = 0;
+    let received = 0;
+    try {
+      await appUpdate.downloadAndInstall((ev) => {
+        if (ev.event === "Started") total = ev.data.contentLength ?? 0;
+        else if (ev.event === "Progress") {
+          received += ev.data.chunkLength;
+          appUpdatePercent = total ? Math.min((received / total) * 100, 100) : null;
+        }
+      });
+      await relaunch();
+    } catch (e) {
+      appUpdateMsg = `Cập nhật lỗi: ${e}`;
+      appUpdating = false;
     }
   }
 
@@ -343,6 +388,33 @@
     </button>
   </header>
 
+  {#if appUpdate}
+    <section class="card app-update">
+      <div class="text">
+        <b>Có phiên bản mới {appUpdate.version}</b>
+        <small>
+          {#if appUpdating}
+            Đang tải bản cập nhật{appUpdatePercent != null ? ` · ${appUpdatePercent.toFixed(0)}%` : "…"} App sẽ tự khởi động
+            lại.
+          {:else if busy}
+            Đang có video tải dở, cập nhật sau khi tải xong nhé.
+          {:else}
+            Bạn đang dùng {appUpdate.currentVersion}.
+          {/if}
+        </small>
+        {#if appUpdating}
+          <div class="bar" class:indeterminate={appUpdatePercent == null}>
+            <div style:width="{appUpdatePercent ?? 0}%"></div>
+          </div>
+        {/if}
+        {#if appUpdateMsg}<p class="error">{appUpdateMsg}</p>{/if}
+      </div>
+      {#if !appUpdating}
+        <button class="primary" onclick={installAppUpdate} disabled={busy}>Cập nhật ngay</button>
+      {/if}
+    </section>
+  {/if}
+
   {#if showSettings}
     <section class="card settings">
       <div class="row">
@@ -376,6 +448,13 @@
         <button onclick={() => install(true)} disabled={installing || updating}>Cài lại thành phần</button>
       </div>
       {#if updateMsg}<p class="note">{updateMsg}</p>{/if}
+
+      <div class="row">
+        <div class="label">Phiên bản app</div>
+        <div class="value">{appVersion || "—"}</div>
+        <button onclick={() => checkAppUpdate()} disabled={appUpdating}>Kiểm tra cập nhật</button>
+      </div>
+      {#if appUpdateMsg && !appUpdate}<p class="note">{appUpdateMsg}</p>{/if}
     </section>
   {/if}
 
