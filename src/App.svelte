@@ -32,6 +32,7 @@
 
   const MAX_PARALLEL = 2;
   const DAY = 24 * 60 * 60 * 1000;
+  const APP_UPDATE_EVERY = 30 * 60 * 1000;
   const isMac = navigator.userAgent.includes("Mac");
 
   const MODES: { value: Mode; title: string; hint: string }[] = [
@@ -84,6 +85,7 @@
   let appUpdating = $state(false);
   let appUpdatePercent = $state<number | null>(null);
   let appUpdateMsg = $state("");
+  let lastAppCheck = 0;
 
   const hasFinished = $derived(items.some((i) => ["done", "error", "canceled"].includes(i.status)));
   const busy = $derived(items.some((i) => ["queued", "downloading", "processing"].includes(i.status)));
@@ -104,6 +106,8 @@
       api.onDone(onDone),
     ];
     window.addEventListener("focus", autoPaste);
+    window.addEventListener("focus", maybeCheckAppUpdate);
+    const updateTimer = setInterval(maybeCheckAppUpdate, 5 * 60 * 1000);
     getVersion().then((v) => (appVersion = v));
     checkAppUpdate(true);
 
@@ -118,6 +122,8 @@
     return () => {
       unlisteners.forEach((p) => p.then((off) => off()));
       window.removeEventListener("focus", autoPaste);
+      window.removeEventListener("focus", maybeCheckAppUpdate);
+      clearInterval(updateTimer);
     };
   });
 
@@ -159,13 +165,21 @@
 
   /** Hỏi GitHub Releases xem có bản app mới không. `quiet`: lúc mở app thì không báo gì nếu không có bản mới hay lỗi mạng. */
   async function checkAppUpdate(quiet = false) {
+    lastAppCheck = Date.now();
     appUpdateMsg = "";
     try {
       appUpdate = await check();
       if (!appUpdate && !quiet) appUpdateMsg = "Bạn đang dùng bản mới nhất.";
     } catch (e) {
+      lastAppCheck = 0; // Lỗi mạng thì lần quay lại app sau thử lại ngay.
       if (!quiet) appUpdateMsg = `Không kiểm tra được bản mới: ${e}`;
     }
+  }
+
+  /** App mở lâu vẫn biết có bản mới: kiểm tra lại khi quay lại cửa sổ hoặc theo định kỳ, tối đa 30 phút một lần. */
+  function maybeCheckAppUpdate() {
+    if (appUpdate || appUpdating || Date.now() - lastAppCheck < APP_UPDATE_EVERY) return;
+    checkAppUpdate(true);
   }
 
   async function installAppUpdate() {
