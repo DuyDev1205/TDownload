@@ -13,6 +13,8 @@ use crate::deps::{self, err};
 use crate::proxy;
 
 const OUTPUT_TEMPLATE: &str = "%(title).150B [%(id)s].%(ext)s";
+// Người dùng đã tự đặt tên thì giữ đúng tên đó, không thêm mã video.
+const CUSTOM_OUTPUT_TEMPLATE: &str = "%(title).150B.%(ext)s";
 
 // Ưu tiên H.264 + AAC tối đa 1080p (mở được trên mọi máy), không có thì lấy bản tốt nhất ≤ 1080p.
 const COMPAT_FORMAT: &str = "bv*[vcodec~='^(avc|h264)'][height<=1080]+ba[ext=m4a]\
@@ -46,22 +48,59 @@ impl Jobs {
 pub enum Mode {
     Best,
     Compat,
-    Mp3,
+    Audio,
 }
 
-fn mode_args(mode: Mode) -> Vec<&'static str> {
+/// Định dạng khi chỉ lấy âm thanh. Các trang chỉ phát âm thanh đã nén, nên FLAC/WAV giữ trọn chất lượng bản gốc
+/// (không nén thêm lần nữa) chứ không làm hay hơn bản gốc.
+#[derive(Clone, Copy, PartialEq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioFormat {
+    /// Giữ nguyên luồng âm thanh gốc (opus/m4a/mp3), không mã hoá lại.
+    Original,
+    Mp3,
+    Flac,
+    Wav,
+}
+
+fn mode_args(mode: Mode, audio: AudioFormat) -> Vec<&'static str> {
     match mode {
         Mode::Best => vec!["-f", "bv*+ba/b", "--merge-output-format", "mp4", "--remux-video", "mp4"],
         Mode::Compat => vec!["-f", COMPAT_FORMAT, "--merge-output-format", "mp4", "--remux-video", "mp4"],
-        Mode::Mp3 => vec!["-f", "ba/b", "-x", "--audio-format", "mp3", "--audio-quality", "320K", "--embed-thumbnail"],
+        Mode::Audio => {
+            let mut args = vec!["-f", "ba/b", "-x", "--audio-format"];
+            args.push(match audio {
+                AudioFormat::Original => "best",
+                AudioFormat::Mp3 => "mp3",
+                AudioFormat::Flac => "flac",
+                AudioFormat::Wav => "wav",
+            });
+            if audio == AudioFormat::Mp3 {
+                args.extend(["--audio-quality", "320K"]);
+            }
+            // WAV không chứa được ảnh bìa, yt-dlp sẽ báo lỗi nếu cố nhúng.
+            if audio != AudioFormat::Wav {
+                args.push("--embed-thumbnail");
+            }
+            args
+        }
     }
 }
 
 /// Chọn bản có độ phân giải (cạnh ngắn) lớn nhất không vượt quá `quality`; không có thì lấy bản nhỏ nhất trên mức đó.
 fn quality_args(mode: Mode, quality: Option<u32>) -> Vec<String> {
     match (mode, quality) {
-        (Mode::Mp3, _) | (_, None) => vec![],
+        (Mode::Audio, _) | (_, None) => vec![],
         (_, Some(q)) => vec!["-S".into(), format!("res:{q}")],
+    }
+}
+
+/// Đổi tiêu đề trước khi đặt tên file: yt-dlp tự thay ký tự cấm trong tên file và ghi tiêu đề mới vào file.
+/// Chuỗi thay thế đi qua re.sub của Python nên phải nhân đôi dấu `\`.
+fn title_args(title: Option<&str>) -> Vec<String> {
+    match title {
+        Some(t) => vec!["--replace-in-metadata".into(), "title".into(), "(?s).+".into(), t.replace('\\', "\\\\")],
+        None => vec![],
     }
 }
 
@@ -183,10 +222,13 @@ pub async fn start_download(
     id: String,
     url: String,
     mode: Mode,
+    audio_format: Option<AudioFormat>,
     quality: Option<u32>,
+    title: Option<String>,
     out_dir: String,
     cookies: String,
 ) -> Result<(), String> {
+    let title = title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     let bin = deps::bin_dir(&app)?;
     let mut cmd = deps::command(&app, "yt-dlp")?;
     cmd.args(["--no-playlist", "--newline", "--progress", "--no-mtime", "--embed-metadata"])
@@ -194,13 +236,14 @@ pub async fn start_download(
         .arg(&bin)
         .arg("-P")
         .arg(&out_dir)
-        .args(["-o", OUTPUT_TEMPLATE])
+        .args(["-o", if title.is_some() { CUSTOM_OUTPUT_TEMPLATE } else { OUTPUT_TEMPLATE }])
+        .args(title_args(title.as_deref()))
         .args(["--progress-template", DOWNLOAD_PROGRESS])
         .args(["--progress-template", POSTPROCESS_PROGRESS])
         .args(["--print", "after_move:FILE|%(filepath)s"])
         .args(proxy::args())
         .args(cookie_args(&cookies))
-        .args(mode_args(mode))
+        .args(mode_args(mode, audio_format.unwrap_or(AudioFormat::Original)))
         .args(quality_args(mode, quality))
         .arg("--")
         .arg(&url)

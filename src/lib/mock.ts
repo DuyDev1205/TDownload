@@ -49,8 +49,9 @@ async function installDeps() {
   depsReady = true;
 }
 
-async function fakeDownload(id: string, url: string, mode: string) {
-  const parts = mode === "mp3" ? 1 : 2;
+async function fakeDownload(id: string, url: string, mode: string, audioFormat: string | null) {
+  const audio = mode === "audio";
+  const parts = audio ? 1 : 2;
   for (let part = 1; part <= parts; part++) {
     for (let p = 0; p <= 100; p += 4) {
       if (canceled.has(id)) return emit("dl-done", { id, ok: false, canceled: true, file: null, error: null });
@@ -67,11 +68,11 @@ async function fakeDownload(id: string, url: string, mode: string) {
       await sleep(120);
     }
   }
-  for (const label of mode === "mp3" ? ["ExtractAudio", "EmbedThumbnail"] : ["Merger", "Metadata"]) {
+  for (const label of audio ? ["ExtractAudio", "EmbedThumbnail"] : ["Merger", "Metadata"]) {
     await emit("dl-progress", { id, stage: "process", part: parts, percent: null, speed: null, eta: null, label });
     await sleep(900);
   }
-  const ext = mode === "mp3" ? "mp3" : "mp4";
+  const ext = !audio ? "mp4" : audioFormat === "original" || !audioFormat ? "opus" : audioFormat;
   await emit("dl-done", { id, ok: true, canceled: false, file: `C:\\Users\\you\\Downloads\\video [${id.slice(0, 6)}].${ext}`, error: null });
 }
 
@@ -105,7 +106,7 @@ export function install() {
           return sampleInfo(a.url);
         case "start_download":
           canceled.delete(a.id);
-          fakeDownload(a.id, a.url, a.mode);
+          fakeDownload(a.id, a.url, a.mode, a.audioFormat);
           return null;
         case "cancel_download":
           canceled.add(a.id);

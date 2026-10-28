@@ -197,6 +197,35 @@ select:focus {
   font-size: 15px;
 }
 
+.url-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.url-field input {
+  padding-right: 36px;
+}
+
+.url-field .clear {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 4px 8px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+
+.url-field .clear:hover {
+  color: var(--text);
+  background: var(--line);
+}
+
 .error {
   color: var(--danger);
   white-space: pre-line;
@@ -375,23 +404,60 @@ select:focus {
 }
 
 .meta {
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.meta h3 {
-  font-size: 15px;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
 .meta p {
   margin: 0;
+}
+
+/* Tiêu đề sửa được: trông như chữ thường, rê chuột thì hiện khung để biết bấm vào sửa được. */
+.title-edit {
+  position: relative;
+  display: flex;
+}
+
+.title-edit input {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  background: transparent;
+  border-color: transparent;
+  padding: 5px 30px 5px 7px;
+  margin-left: -8px;
+}
+
+.title-edit:hover input {
+  border-color: var(--line);
+}
+
+.title-edit input:focus {
+  background: var(--field);
+}
+
+.title-edit svg {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.restore {
+  align-self: flex-start;
+  font-size: 12.5px;
 }
 
 .tags {
@@ -494,6 +560,10 @@ select:focus {
   padding: 5px 12px;
   font-size: 13.5px;
   font-weight: 600;
+}
+
+.format-hint {
+  margin: 8px 0 0;
 }
 
 /* Danh sách tải */

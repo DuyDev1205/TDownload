@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-export type Mode = "best" | "compat" | "mp3";
+export type Mode = "best" | "compat" | "audio";
+export type AudioFormat = "original" | "mp3" | "flac" | "wav";
 
 export interface DepsStatus {
   ready: boolean;
@@ -54,7 +55,11 @@ export const startDownload = (args: {
   id: string;
   url: string;
   mode: Mode;
+  /** Chỉ dùng khi mode là "audio". */
+  audioFormat: AudioFormat | null;
   quality: number | null;
+  /** Tên người dùng tự đặt; null là giữ tiêu đề gốc. */
+  title: string | null;
   outDir: string;
   cookies: string;
 }) =>

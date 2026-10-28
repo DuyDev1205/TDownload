@@ -8,7 +8,7 @@
   import { relaunch } from "@tauri-apps/plugin-process";
   import { check, type Update } from "@tauri-apps/plugin-updater";
   import * as api from "./lib/api";
-  import type { DepsProgress, DepsStatus, DlDone, DlProgress, Mode, VideoInfo } from "./lib/api";
+  import type { AudioFormat, DepsProgress, DepsStatus, DlDone, DlProgress, Mode, VideoInfo } from "./lib/api";
   import { SITE_NAME, extractUrl, fmtBytes, fmtDuration, fmtQuality, isKnownSite, siteOf } from "./lib/format";
   import { load, save } from "./lib/storage";
   import Logo from "./lib/Logo.svelte";
@@ -19,7 +19,10 @@
     id: string;
     info: VideoInfo;
     mode: Mode;
+    audioFormat: AudioFormat | null;
     quality: number | null;
+    /** Tên người dùng tự đặt; null là giữ tiêu đề gốc. */
+    title: string | null;
     status: Status;
     percent: number | null;
     speed: number | null;
@@ -36,9 +39,28 @@
   const isMac = navigator.userAgent.includes("Mac");
 
   const MODES: { value: Mode; title: string; hint: string }[] = [
-    { value: "best", title: "Video · Cao nhất", hint: "Độ phân giải tối đa, đến 4K/8K nếu có" },
+    { value: "best", title: "Video", hint: "Giữ nguyên chất lượng gốc, đến 4K/8K nếu có" },
     { value: "compat", title: "Video · Tương thích", hint: "H.264 ≤ 1080p, mở được trên mọi máy" },
-    { value: "mp3", title: "MP3 · 320 kbps", hint: "Chỉ lấy âm thanh, kèm ảnh bìa" },
+    { value: "audio", title: "Chỉ âm thanh", hint: "Gốc, MP3 hoặc lossless FLAC/WAV" },
+  ];
+
+  const AUDIO_FORMATS: { value: AudioFormat; label: string; hint: string }[] = [
+    {
+      value: "original",
+      label: "Gốc",
+      hint: "Giữ nguyên âm thanh của trang web, không nén lại: tốt nhất và nhẹ nhất. File .opus, .m4a hoặc .mp3 tuỳ nguồn.",
+    },
+    { value: "mp3", label: "MP3", hint: "Nén lại sang MP3 320 kbps, mở được ở mọi máy và mọi trình phát." },
+    {
+      value: "flac",
+      label: "FLAC",
+      hint: "Lossless: giữ trọn chất lượng bản gốc, không nén thêm lần nào. File nặng hơn, có ảnh bìa.",
+    },
+    {
+      value: "wav",
+      label: "WAV",
+      hint: "Lossless không nén, file rất nặng, hợp cho phần mềm dựng video/DJ. WAV không chứa được ảnh bìa.",
+    },
   ];
 
   const COOKIE_SOURCES: [string, string][] = [
@@ -60,13 +82,22 @@
   let fetching = $state(false);
   let fetchError = $state("");
   let info = $state<VideoInfo | null>(null);
+  let customTitle = $state("");
+  let urlInput = $state<HTMLInputElement>();
 
-  let mode = $state<Mode>(load("mode", "best") as Mode);
+  // Bản cũ lưu chế độ "mp3": chuyển sang "Chỉ âm thanh" với định dạng MP3 như trước.
+  const savedMode = load("mode", "best");
+  let mode = $state<Mode>(savedMode === "mp3" ? "audio" : (savedMode as Mode));
+  let audioFormat = $state<AudioFormat>(load("audioFormat", savedMode === "mp3" ? "mp3" : "original") as AudioFormat);
+  const audioHint = $derived(AUDIO_FORMATS.find((f) => f.value === audioFormat)?.hint ?? "");
   /** Độ phân giải tối đa muốn tải; null là lấy cao nhất có thể. */
   let quality = $state<number | null>(null);
   // Chế độ Tương thích chỉ lấy tới 1080p nên ẩn các mức cao hơn.
   const qualityOptions = $derived(info ? info.heights.filter((h) => mode !== "compat" || h <= 1080) : []);
-  const chosenQuality = $derived(quality != null && qualityOptions.includes(quality) ? quality : null);
+  // Chưa chọn (hoặc mức đã chọn không có ở chế độ này) thì lấy mức cao nhất của video.
+  const chosenQuality = $derived(
+    quality != null && qualityOptions.includes(quality) ? quality : (qualityOptions[0] ?? null),
+  );
   let outDir = $state(load("outDir", ""));
   let cookieKind = $state(load("cookieKind", ""));
   let cookieFile = $state(load("cookieFile", ""));
@@ -92,6 +123,7 @@
 
   $effect(() => {
     save("mode", mode);
+    save("audioFormat", audioFormat);
     save("outDir", outDir);
     save("cookieKind", cookieKind);
     save("cookieFile", cookieFile);
@@ -212,15 +244,23 @@
     }
   }
 
-  /** Khi quay lại app, nếu clipboard có link YouTube/TikTok/Facebook mới thì tự dán. */
+  /** Khi quay lại app, nếu clipboard có link YouTube/TikTok/Facebook mới (khác link đang có trong ô) thì tự dán. */
   async function autoPaste() {
-    if (url.trim() || fetching || !deps?.ready) return;
+    if (fetching || !deps?.ready) return;
     const found = await clipboardUrl();
-    if (found && isKnownSite(found) && found !== lastAutoPaste) {
+    if (found && isKnownSite(found) && found !== lastAutoPaste && found !== url.trim()) {
       lastAutoPaste = found;
       url = found;
       getInfo();
     }
+  }
+
+  function clearUrl() {
+    url = "";
+    info = null;
+    fetchError = "";
+    customTitle = "";
+    urlInput?.focus();
   }
 
   async function pasteNow() {
@@ -241,6 +281,7 @@
     quality = null;
     try {
       info = await api.fetchInfo(target, cookies);
+      customTitle = info.title;
     } catch (e) {
       fetchError = String(e);
     } finally {
@@ -250,11 +291,15 @@
 
   function enqueue() {
     if (!info) return;
+    const typed = customTitle.trim();
+    const title = typed && typed !== info.title ? typed : null;
     items.unshift({
       id: crypto.randomUUID(),
-      info: $state.snapshot(info),
+      info: { ...$state.snapshot(info), title: title ?? info.title },
       mode,
-      quality: mode === "mp3" ? null : chosenQuality,
+      audioFormat: mode === "audio" ? audioFormat : null,
+      quality: mode === "audio" ? null : chosenQuality,
+      title,
       status: "queued",
       percent: null,
       speed: null,
@@ -282,7 +327,7 @@
 
   function start(it: Item) {
     Object.assign(it, { status: "downloading", percent: null, speed: null, eta: null, part: 0, stage: "", file: null, error: null });
-    api.startDownload({ id: it.id, url: it.info.url, mode: it.mode, quality: it.quality, outDir, cookies }).catch((e) => {
+    api.startDownload({ id: it.id, url: it.info.url, mode: it.mode, audioFormat: it.audioFormat, quality: it.quality, title: it.title, outDir, cookies }).catch((e) => {
       it.status = "error";
       it.error = String(e);
       pump();
@@ -342,7 +387,7 @@
   function stageLabel(pp: string | null): string {
     const name = (pp ?? "").toLowerCase();
     if (name.includes("merger")) return "Đang ghép hình + tiếng…";
-    if (name.includes("extractaudio")) return "Đang chuyển sang MP3…";
+    if (name.includes("extractaudio")) return "Đang tách âm thanh…";
     if (name.includes("thumbnail")) return "Đang gắn ảnh bìa…";
     if (name.includes("metadata")) return "Đang ghi thông tin…";
     if (name.includes("remux") || name.includes("convertor")) return "Đang chuyển sang MP4…";
@@ -387,7 +432,18 @@
     return p.total ? (p.downloaded / p.total) * 100 : 0;
   }
 
-  const modeTitle = (m: Mode) => MODES.find((x) => x.value === m)?.title ?? m;
+  /** Tên thẻ chế độ; chế độ Video ghi luôn độ phân giải cao nhất của video đang xem, ví dụ "Video · 8K". */
+  function modeTitle(m: Mode): string {
+    const title = MODES.find((x) => x.value === m)?.title ?? m;
+    return m === "best" && info?.maxHeight ? `${title} · ${fmtQuality(info.maxHeight)}` : title;
+  }
+
+  /** Mô tả ngắn cách tải của một mục, ví dụ "Video · 720p", "Video · Tương thích · 1080p" hoặc "Chỉ âm thanh · FLAC". */
+  function itemFormat(it: Item): string {
+    const title = MODES.find((x) => x.value === it.mode)?.title ?? it.mode;
+    if (it.audioFormat) return `${title} · ${AUDIO_FORMATS.find((f) => f.value === it.audioFormat)?.label}`;
+    return it.quality ? `${title} · ${fmtQuality(it.quality)}` : title;
+  }
 </script>
 
 <main>
@@ -511,12 +567,18 @@
           getInfo();
         }}
       >
-        <input
-          bind:value={url}
-          placeholder="Dán link video YouTube, TikTok hoặc Facebook…"
-          spellcheck="false"
-          autocomplete="off"
-        />
+        <div class="url-field">
+          <input
+            bind:this={urlInput}
+            bind:value={url}
+            placeholder="Dán link video YouTube, TikTok hoặc Facebook…"
+            spellcheck="false"
+            autocomplete="off"
+          />
+          {#if url && !fetching}
+            <button type="button" class="clear" title="Xoá link" aria-label="Xoá link" onclick={clearUrl}>✕</button>
+          {/if}
+        </div>
         <button type="button" onclick={pasteNow} disabled={fetching}>Dán</button>
         <button type="submit" class="primary" disabled={fetching || !url.trim()}>
           {fetching ? "Đang đọc…" : "Lấy video"}
@@ -544,7 +606,13 @@
               <span class="site {site}">{SITE_NAME[site]}</span>
               {#if info.maxHeight}<span class="tag">Tối đa {fmtQuality(info.maxHeight)}</span>{/if}
             </div>
-            <h3 title={info.title}>{info.title}</h3>
+            <label class="title-edit" title="Bấm để đổi tên file trước khi tải">
+              <input bind:value={customTitle} placeholder={info.title} spellcheck="false" aria-label="Tên file" />
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Zm11-15 4 4" /></svg>
+            </label>
+            {#if customTitle.trim() !== info.title}
+              <button class="link restore" onclick={() => (customTitle = info!.title)}>Dùng lại tên gốc</button>
+            {/if}
             {#if info.uploader}<p class="muted">{info.uploader}</p>{/if}
           </div>
         </div>
@@ -558,18 +626,25 @@
               class:selected={mode === m.value}
               onclick={() => (mode = m.value)}
             >
-              <b>{m.title}</b>
+              <b>{modeTitle(m.value)}</b>
               <small>{m.hint}</small>
             </button>
           {/each}
         </div>
 
-        {#if mode !== "mp3" && qualityOptions.length > 1}
+        {#if mode === "audio"}
+          <div class="qualities" role="radiogroup" aria-label="Định dạng âm thanh">
+            <span class="label">Định dạng</span>
+            {#each AUDIO_FORMATS as f (f.value)}
+              <button role="radio" aria-checked={audioFormat === f.value} class:selected={audioFormat === f.value} onclick={() => (audioFormat = f.value)}>
+                {f.label}
+              </button>
+            {/each}
+          </div>
+          <p class="note format-hint">{audioHint}</p>
+        {:else if qualityOptions.length > 1}
           <div class="qualities" role="radiogroup" aria-label="Chất lượng">
             <span class="label">Chất lượng</span>
-            <button role="radio" aria-checked={chosenQuality == null} class:selected={chosenQuality == null} onclick={() => (quality = null)}>
-              Tối đa
-            </button>
             {#each qualityOptions as h (h)}
               <button role="radio" aria-checked={chosenQuality === h} class:selected={chosenQuality === h} onclick={() => (quality = h)}>
                 {fmtQuality(h)}
@@ -598,7 +673,7 @@
               <div class="title" title={it.info.title}>{it.info.title}</div>
               <div class="sub">
                 <span class="site {siteOf(it.info.site)}">{SITE_NAME[siteOf(it.info.site)]}</span>
-                <span>{modeTitle(it.mode)}{it.quality ? ` · ${fmtQuality(it.quality)}` : ""}</span>
+                <span>{itemFormat(it)}</span>
               </div>
               {#if it.status === "downloading" || it.status === "processing" || it.status === "queued"}
                 <div class="bar" class:indeterminate={it.percent == null || it.status === "processing"}>
