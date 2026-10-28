@@ -1,0 +1,554 @@
+:root {
+  --bg: #f4f5f9;
+  --card: #ffffff;
+  --text: #1b1d29;
+  --muted: #6b6f82;
+  --line: #e3e5ee;
+  --field: #f7f8fb;
+  --accent: #6d5dfc;
+  --accent-text: #ffffff;
+  --accent-soft: #eeecff;
+  --danger: #d93a4f;
+  --ok: #1f9d63;
+  --yt: #ff0033;
+  --tt: #111111;
+  --fb: #1877f2;
+  --shadow: 0 1px 2px rgb(20 22 40 / 0.06), 0 4px 16px rgb(20 22 40 / 0.05);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12131a;
+    --card: #1b1d27;
+    --text: #eceef6;
+    --muted: #9a9eb3;
+    --line: #2c2f3d;
+    --field: #232634;
+    --accent: #8a7dff;
+    --accent-soft: #2a2650;
+    --tt: #e8e8e8;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 20px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand h1 {
+  font-size: 19px;
+}
+
+.brand p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #6d5dfc, #e5487d);
+  display: grid;
+  place-items: center;
+}
+
+.logo svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 1px solid var(--line);
+  background: var(--field);
+  border-radius: 9px;
+  padding: 8px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+button.primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+button.big {
+  width: 100%;
+  padding: 12px;
+  font-size: 15px;
+  margin-top: 14px;
+}
+
+button.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+
+button.ghost.active,
+button.ghost:hover:not(:disabled) {
+  background: var(--field);
+  border-color: var(--line);
+}
+
+button.ghost svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+}
+
+button.icon {
+  padding: 6px 10px;
+  color: var(--muted);
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  padding: 4px;
+}
+
+input,
+select {
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 12px;
+  outline: none;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.input {
+  display: flex;
+  gap: 8px;
+}
+
+.input input {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+}
+
+.error {
+  color: var(--danger);
+  white-space: pre-line;
+  margin: 12px 0 0;
+}
+
+.muted,
+.note {
+  color: var(--muted);
+}
+
+.note {
+  font-size: 12.5px;
+  margin: 2px 0 6px;
+}
+
+/* Cài đặt */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.settings .label {
+  width: 130px;
+  color: var(--muted);
+}
+
+.settings .value {
+  flex: 1;
+  min-width: 120px;
+}
+
+.path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+/* Cài đặt lần đầu */
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.setup p {
+  margin: 0;
+}
+
+.deps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.deps li {
+  display: grid;
+  grid-template-columns: 70px 1fr 150px;
+  align-items: center;
+  gap: 10px;
+}
+
+.deps small {
+  color: var(--muted);
+  text-align: right;
+}
+
+/* Thanh tiến độ */
+.bar {
+  height: 6px;
+  background: var(--field);
+  border-radius: 99px;
+  overflow: hidden;
+  position: relative;
+}
+
+.bar > div {
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 0.3s;
+}
+
+.bar.indeterminate > div {
+  width: 35% !important;
+  position: absolute;
+  animation: slide 1.2s ease-in-out infinite;
+}
+
+@keyframes slide {
+  from {
+    left: -35%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+/* Xem trước */
+.preview {
+  display: flex;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.thumb {
+  width: 200px;
+  aspect-ratio: 16 / 9;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--field);
+  overflow: hidden;
+  position: relative;
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.thumb.small {
+  width: 104px;
+}
+
+.duration {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  background: rgb(0 0 0 / 0.75);
+  color: #fff;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 5px;
+}
+
+.meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.meta h3 {
+  font-size: 15px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.meta p {
+  margin: 0;
+}
+
+.tags {
+  display: flex;
+  gap: 6px;
+}
+
+.site,
+.tag {
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--field);
+  border: 1px solid var(--line);
+}
+
+.site.youtube {
+  color: var(--yt);
+}
+
+.site.tiktok {
+  color: var(--tt);
+}
+
+.site.facebook {
+  color: var(--fb);
+}
+
+.skeleton .thumb,
+.skeleton .meta div {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.skeleton .meta {
+  flex: 1;
+}
+
+.skeleton .meta div {
+  height: 14px;
+  background: var(--field);
+  border-radius: 6px;
+}
+
+.skeleton .meta div:last-child {
+  width: 50%;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Chọn chế độ */
+.modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.mode {
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  white-space: normal;
+  padding: 10px 12px;
+  gap: 2px;
+}
+
+.mode small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mode.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Danh sách tải */
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.queue-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.queue-head h2 {
+  font-size: 15px;
+}
+
+.item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+}
+
+.item .body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.item .title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item .sub {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.item .status {
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: pre-line;
+}
+
+.item.done .status {
+  color: var(--ok);
+}
+
+.item.error .status {
+  color: var(--danger);
+}
+
+.item .actions {
+  display: flex;
+  gap: 6px;
+}
+
+.empty {
+  text-align: center;
+  color: var(--muted);
+  margin-top: 30px;
+}
+
+@media (max-width: 680px) {
+  .modes {
+    grid-template-columns: 1fr;
+  }
+
+  .thumb {
+    width: 140px;
+  }
+
+  .item {
+    flex-wrap: wrap;
+  }
+}
