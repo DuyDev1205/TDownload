@@ -1,5 +1,9 @@
 import { mount } from "svelte";
+import { isTauri } from "@tauri-apps/api/core";
 import "./app.css";
 import App from "./App.svelte";
 
-mount(App, { target: document.getElementById("app")! });
+// Chạy `npm run dev` trên trình duyệt thì dùng backend giả để chỉnh giao diện; bản build không chứa phần này.
+const ready = import.meta.env.DEV && !isTauri() ? import("./lib/mock").then((m) => m.install()) : Promise.resolve();
+
+ready.then(() => mount(App, { target: document.getElementById("app")! }));

@@ -48,8 +48,9 @@ body {
 
 main {
   max-width: 860px;
+  min-height: 100vh;
   margin: 0 auto;
-  padding: 20px 20px 40px;
+  padding: 20px 20px 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -81,25 +82,6 @@ header {
   margin: 0;
   color: var(--muted);
   font-size: 12.5px;
-}
-
-.logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 11px;
-  background: linear-gradient(135deg, #6d5dfc, #e5487d);
-  display: grid;
-  place-items: center;
-}
-
-.logo svg {
-  width: 24px;
-  height: 24px;
-  fill: none;
-  stroke: #fff;
-  stroke-width: 2.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .card {
@@ -486,10 +468,32 @@ select:focus {
   font-size: 12px;
 }
 
-.mode.selected {
+.mode.selected,
+.qualities button.selected {
   border-color: var(--accent);
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Chọn độ phân giải */
+.qualities {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.qualities .label {
+  color: var(--muted);
+  font-size: 13px;
+  margin-right: 4px;
+}
+
+.qualities button {
+  padding: 5px 12px;
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
 /* Danh sách tải */
@@ -562,6 +566,18 @@ select:focus {
   text-align: center;
   color: var(--muted);
   margin-top: 30px;
+}
+
+/* Bản quyền, luôn nằm cuối cửa sổ */
+footer {
+  margin-top: auto;
+  padding-top: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12.5px;
 }
 
 @media (max-width: 680px) {

@@ -51,10 +51,9 @@ export function fmtDuration(sec: number | null | undefined): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
 }
 
+const QUALITY_NAME: Record<number, string> = { 4320: "8K", 2160: "4K", 1440: "2K" };
+
 export function fmtQuality(height: number | null): string {
   if (!height) return "";
-  if (height >= 4320) return "8K";
-  if (height >= 2160) return "4K";
-  if (height >= 1440) return "2K";
-  return `${height}p`;
+  return QUALITY_NAME[height] ?? `${height}p`;
 }

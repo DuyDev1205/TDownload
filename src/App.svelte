@@ -11,6 +11,7 @@
   import type { DepsProgress, DepsStatus, DlDone, DlProgress, Mode, VideoInfo } from "./lib/api";
   import { SITE_NAME, extractUrl, fmtBytes, fmtDuration, fmtQuality, isKnownSite, siteOf } from "./lib/format";
   import { load, save } from "./lib/storage";
+  import Logo from "./lib/Logo.svelte";
 
   type Status = "queued" | "downloading" | "processing" | "done" | "error" | "canceled";
 
@@ -18,6 +19,7 @@
     id: string;
     info: VideoInfo;
     mode: Mode;
+    quality: number | null;
     status: Status;
     percent: number | null;
     speed: number | null;
@@ -59,6 +61,11 @@
   let info = $state<VideoInfo | null>(null);
 
   let mode = $state<Mode>(load("mode", "best") as Mode);
+  /** Độ phân giải tối đa muốn tải; null là lấy cao nhất có thể. */
+  let quality = $state<number | null>(null);
+  // Chế độ Tương thích chỉ lấy tới 1080p nên ẩn các mức cao hơn.
+  const qualityOptions = $derived(info ? info.heights.filter((h) => mode !== "compat" || h <= 1080) : []);
+  const chosenQuality = $derived(quality != null && qualityOptions.includes(quality) ? quality : null);
   let outDir = $state(load("outDir", ""));
   let cookieKind = $state(load("cookieKind", ""));
   let cookieFile = $state(load("cookieFile", ""));
@@ -217,6 +224,7 @@
     fetching = true;
     fetchError = "";
     info = null;
+    quality = null;
     try {
       info = await api.fetchInfo(target, cookies);
     } catch (e) {
@@ -232,6 +240,7 @@
       id: crypto.randomUUID(),
       info: $state.snapshot(info),
       mode,
+      quality: mode === "mp3" ? null : chosenQuality,
       status: "queued",
       percent: null,
       speed: null,
@@ -259,7 +268,7 @@
 
   function start(it: Item) {
     Object.assign(it, { status: "downloading", percent: null, speed: null, eta: null, part: 0, stage: "", file: null, error: null });
-    api.startDownload({ id: it.id, url: it.info.url, mode: it.mode, outDir, cookies }).catch((e) => {
+    api.startDownload({ id: it.id, url: it.info.url, mode: it.mode, quality: it.quality, outDir, cookies }).catch((e) => {
       it.status = "error";
       it.error = String(e);
       pump();
@@ -370,9 +379,7 @@
 <main>
   <header>
     <div class="brand">
-      <span class="logo" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M12 4v10m-4.5-4.5L12 14l4.5-4.5M6 19h12" /></svg>
-      </span>
+      <Logo size={46} />
       <div>
         <h1>VidSaver</h1>
         <p>YouTube · TikTok · Facebook</p>
@@ -543,6 +550,20 @@
           {/each}
         </div>
 
+        {#if mode !== "mp3" && qualityOptions.length > 1}
+          <div class="qualities" role="radiogroup" aria-label="Chất lượng">
+            <span class="label">Chất lượng</span>
+            <button role="radio" aria-checked={chosenQuality == null} class:selected={chosenQuality == null} onclick={() => (quality = null)}>
+              Tối đa
+            </button>
+            {#each qualityOptions as h (h)}
+              <button role="radio" aria-checked={chosenQuality === h} class:selected={chosenQuality === h} onclick={() => (quality = h)}>
+                {fmtQuality(h)}
+              </button>
+            {/each}
+          </div>
+        {/if}
+
         <button class="primary big" onclick={enqueue} disabled={!outDir}>Tải về</button>
       {/if}
     </section>
@@ -563,7 +584,7 @@
               <div class="title" title={it.info.title}>{it.info.title}</div>
               <div class="sub">
                 <span class="site {siteOf(it.info.site)}">{SITE_NAME[siteOf(it.info.site)]}</span>
-                <span>{modeTitle(it.mode)}</span>
+                <span>{modeTitle(it.mode)}{it.quality ? ` · ${fmtQuality(it.quality)}` : ""}</span>
               </div>
               {#if it.status === "downloading" || it.status === "processing" || it.status === "queued"}
                 <div class="bar" class:indeterminate={it.percent == null || it.status === "processing"}>
@@ -592,4 +613,9 @@
       <p class="empty">Copy link video rồi quay lại đây, app sẽ tự dán.</p>
     {/if}
   {/if}
+
+  <footer>
+    <Logo size={24} />
+    <span>© {new Date().getFullYear()} Trần Thanh Duy</span>
+  </footer>
 </main>

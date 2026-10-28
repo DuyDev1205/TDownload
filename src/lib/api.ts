@@ -24,6 +24,7 @@ export interface VideoInfo {
   uploader: string | null;
   site: string;
   maxHeight: number | null;
+  heights: number[];
   url: string;
 }
 
@@ -49,7 +50,14 @@ export const depsStatus = () => invoke<DepsStatus>("deps_status");
 export const installDeps = (force = false) => invoke<void>("install_deps", { force });
 export const updateYtdlp = () => invoke<string>("update_ytdlp");
 export const fetchInfo = (url: string, cookies: string) => invoke<VideoInfo>("fetch_info", { url, cookies });
-export const startDownload = (args: { id: string; url: string; mode: Mode; outDir: string; cookies: string }) =>
+export const startDownload = (args: {
+  id: string;
+  url: string;
+  mode: Mode;
+  quality: number | null;
+  outDir: string;
+  cookies: string;
+}) =>
   invoke<void>("start_download", args);
 export const cancelDownload = (id: string) => invoke<void>("cancel_download", { id });
 

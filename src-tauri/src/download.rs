@@ -57,6 +57,14 @@ fn mode_args(mode: Mode) -> Vec<&'static str> {
     }
 }
 
+/// Chọn bản có độ phân giải (cạnh ngắn) lớn nhất không vượt quá `quality`; không có thì lấy bản nhỏ nhất trên mức đó.
+fn quality_args(mode: Mode, quality: Option<u32>) -> Vec<String> {
+    match (mode, quality) {
+        (Mode::Mp3, _) | (_, None) => vec![],
+        (_, Some(q)) => vec!["-S".into(), format!("res:{q}")],
+    }
+}
+
 /// `cookies` là "" (không dùng), "browser:<tên trình duyệt>" hoặc "file:<đường dẫn cookies.txt>".
 fn cookie_args(cookies: &str) -> Vec<String> {
     if let Some(browser) = cookies.strip_prefix("browser:") {
@@ -77,6 +85,8 @@ pub struct VideoInfo {
     uploader: Option<String>,
     site: String,
     max_height: Option<u64>,
+    /// Các độ phân giải có sẵn, giảm dần.
+    heights: Vec<u64>,
     url: String,
 }
 
@@ -101,16 +111,28 @@ pub async fn fetch_info(app: AppHandle, url: String, cookies: String) -> Result<
     }
 
     let text = |k: &str| v[k].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
-    let max_height = v["formats"]
+    // Độ phân giải tính theo cạnh ngắn như yt-dlp, để video dọc 1080x1920 vẫn là 1080p.
+    let res = |f: &Value| match (f["width"].as_u64(), f["height"].as_u64()) {
+        (Some(w), Some(h)) => Some(w.min(h)),
+        (None, h) => h,
+        _ => None,
+    };
+    let mut heights: Vec<u64> = v["formats"]
         .as_array()
-        .and_then(|formats| {
+        .map(|formats| {
             formats
                 .iter()
                 .filter(|f| f["vcodec"].as_str() != Some("none"))
-                .filter_map(|f| f["height"].as_u64())
-                .max()
+                .filter_map(res)
+                .filter(|&h| h >= 144)
+                .collect()
         })
-        .or_else(|| v["height"].as_u64());
+        .unwrap_or_default();
+    if heights.is_empty() {
+        heights.extend(res(&v));
+    }
+    heights.sort_unstable_by(|a, b| b.cmp(a));
+    heights.dedup();
 
     Ok(VideoInfo {
         title: text("title").unwrap_or_else(|| "Không có tiêu đề".into()),
@@ -118,7 +140,8 @@ pub async fn fetch_info(app: AppHandle, url: String, cookies: String) -> Result<
         duration: v["duration"].as_f64(),
         uploader: text("uploader").or_else(|| text("channel")),
         site: text("extractor_key").unwrap_or_default(),
-        max_height,
+        max_height: heights.first().copied(),
+        heights,
         url: text("webpage_url").unwrap_or(url),
     })
 }
@@ -160,6 +183,7 @@ pub async fn start_download(
     id: String,
     url: String,
     mode: Mode,
+    quality: Option<u32>,
     out_dir: String,
     cookies: String,
 ) -> Result<(), String> {
@@ -177,6 +201,7 @@ pub async fn start_download(
         .args(proxy::args())
         .args(cookie_args(&cookies))
         .args(mode_args(mode))
+        .args(quality_args(mode, quality))
         .arg("--")
         .arg(&url)
         .stdout(Stdio::piped())
