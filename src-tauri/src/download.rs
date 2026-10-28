@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 
 use crate::deps::{self, err};
+use crate::proxy;
 
 const OUTPUT_TEMPLATE: &str = "%(title).150B [%(id)s].%(ext)s";
 
@@ -83,6 +84,7 @@ pub struct VideoInfo {
 pub async fn fetch_info(app: AppHandle, url: String, cookies: String) -> Result<VideoInfo, String> {
     let out = deps::command(&app, "yt-dlp")?
         .args(["-J", "--no-playlist", "--no-warnings"])
+        .args(proxy::args())
         .args(cookie_args(&cookies))
         .arg("--")
         .arg(&url)
@@ -172,6 +174,7 @@ pub async fn start_download(
         .args(["--progress-template", DOWNLOAD_PROGRESS])
         .args(["--progress-template", POSTPROCESS_PROGRESS])
         .args(["--print", "after_move:FILE|%(filepath)s"])
+        .args(proxy::args())
         .args(cookie_args(&cookies))
         .args(mode_args(mode))
         .arg("--")
@@ -328,6 +331,8 @@ fn friendly_error(log: &str) -> String {
         "Không đọc được cookie từ trình duyệt. Hãy tắt hẳn trình duyệt rồi thử lại, hoặc dùng Firefox / file cookies.txt."
     } else if ["login", "log in", "sign in", "cookies", "private", "registered users", "not a bot"].iter().any(|k| low.contains(k)) {
         "Video cần đăng nhập hoặc là video riêng tư. Vào Cài đặt → Cookie đăng nhập, chọn trình duyệt bạn đã đăng nhập."
+    } else if ["resolving timed out", "could not resolve", "getaddrinfo", "timed out", "connection refused"].iter().any(|k| low.contains(k)) {
+        "Không kết nối được tới trang web. Kiểm tra mạng (hoặc VPN/proxy) rồi thử lại."
     } else if low.contains("unsupported url") {
         "Link này không được hỗ trợ."
     } else if low.contains("ffmpeg") || low.contains("postprocessing") {

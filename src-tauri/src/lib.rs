@@ -1,10 +1,15 @@
 mod deps;
 mod download;
+mod proxy;
 
 use tauri::Manager;
 
 pub fn run() {
     tauri::Builder::default()
+        .setup(|_| {
+            proxy::start();
+            Ok(())
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
