@@ -43,7 +43,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY4NkYwODRFQ0I4QTczNTcKUldSWGM0ckxUZ2h2K0lCQW5uWHd6NzAvT1J3cUFNaHRHcWRBYzljZVp1cnJHdmpBVTdFSldRRWUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU2NEQwQjEzMjZFNERGQTYKUldTbTMrUW1Fd3RONW5xYlhOSEFSdFFSeVZSdjVyUjdpRFhQR3lWSndpKzJmOEQ3L0NoNHlUa2MK",
       "endpoints": ["https://github.com/DuyDev1205/TDownload/releases/latest/download/latest.json"],
       "windows": {
         "installMode": "passive"
