@@ -125,6 +125,11 @@ pub fn command(app: &AppHandle, tool: &str) -> Result<tokio::process::Command, S
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUTF8", "1")
         .stdin(Stdio::null());
+    // yt-dlp.exe đóng gói bằng PyInstaller nên bỏ qua các biến PYTHON* ở trên và in theo bảng mã của Windows
+    // (cp1252), làm hỏng đường dẫn có tiếng Việt. Phải ép UTF-8 bằng tham số của chính yt-dlp.
+    if tool == "yt-dlp" {
+        cmd.args(["--encoding", "utf-8"]);
+    }
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
     Ok(cmd)
