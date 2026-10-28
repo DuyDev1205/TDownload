@@ -350,6 +350,12 @@ fn handle_line(app: &AppHandle, id: &str, state: &Mutex<LineState>, line: &str) 
     }
 }
 
+/// Kiểm tra các file trong lịch sử tải còn ở chỗ cũ không (người dùng có thể đã xoá hoặc chuyển đi).
+#[tauri::command]
+pub fn files_exist(paths: Vec<String>) -> Vec<bool> {
+    paths.iter().map(|p| std::path::Path::new(p).exists()).collect()
+}
+
 #[tauri::command]
 pub fn cancel_download(jobs: State<'_, Jobs>, id: String) {
     let pid = match jobs.0.lock().unwrap().get_mut(&id) {

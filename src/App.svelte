@@ -9,7 +9,17 @@
   import { check, type Update } from "@tauri-apps/plugin-updater";
   import * as api from "./lib/api";
   import type { AudioFormat, DepsProgress, DepsStatus, DlDone, DlProgress, Mode, VideoInfo } from "./lib/api";
-  import { SITE_NAME, extractUrl, fmtBytes, fmtDuration, fmtQuality, isKnownSite, siteOf } from "./lib/format";
+  import {
+    SITE_NAME,
+    extractUrl,
+    fmtBytes,
+    fmtDay,
+    fmtDuration,
+    fmtQuality,
+    fmtTime,
+    isKnownSite,
+    siteOf,
+  } from "./lib/format";
   import { load, save } from "./lib/storage";
   import Logo from "./lib/Logo.svelte";
 
@@ -31,9 +41,14 @@
     stage: string;
     file: string | null;
     error: string | null;
+    addedAt: number;
+    doneAt: number | null;
+    /** File đã tải nhưng không còn ở chỗ cũ (bị xoá hoặc chuyển đi). */
+    missing?: boolean;
   }
 
   const MAX_PARALLEL = 2;
+  const HISTORY_LIMIT = 200;
   const DAY = 24 * 60 * 60 * 1000;
   const APP_UPDATE_EVERY = 30 * 60 * 1000;
   const isMac = navigator.userAgent.includes("Mac");
@@ -108,7 +123,17 @@
   let showSettings = $state(false);
   let updating = $state(false);
   let updateMsg = $state("");
-  let items = $state<Item[]>([]);
+  let items = $state<Item[]>(loadHistory());
+  const groups = $derived.by(() => {
+    const out: { day: string; items: Item[] }[] = [];
+    for (const it of items) {
+      const day = fmtDay(it.addedAt);
+      const last = out[out.length - 1];
+      if (last?.day === day) last.items.push(it);
+      else out.push({ day, items: [it] });
+    }
+    return out;
+  });
   let lastAutoPaste = "";
 
   let appVersion = $state("");
@@ -142,6 +167,7 @@
     const updateTimer = setInterval(maybeCheckAppUpdate, 5 * 60 * 1000);
     getVersion().then((v) => (appVersion = v));
     checkAppUpdate(true);
+    checkMissingFiles();
 
     (async () => {
       if (!outDir) outDir = await downloadDir();
@@ -308,10 +334,55 @@
       stage: "",
       file: null,
       error: null,
+      addedAt: Date.now(),
+      doneAt: null,
     });
     info = null;
     url = "";
+    saveHistory();
     pump();
+  }
+
+  /** Nạp lịch sử tải từ lần trước. Mục đang tải dở khi tắt app chuyển sang lỗi để có nút Thử lại. */
+  function loadHistory(): Item[] {
+    try {
+      const list = JSON.parse(load("history", "[]")) as Item[];
+      return list.map((it) =>
+        ["queued", "downloading", "processing"].includes(it.status)
+          ? { ...it, status: "error", percent: null, speed: null, eta: null, error: "Đã dừng vì app bị tắt. Bấm Thử lại để tải tiếp." }
+          : it,
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  /** Ghi lịch sử khi trạng thái thay đổi (không ghi theo từng nhịp tiến độ). */
+  function saveHistory() {
+    save("history", JSON.stringify($state.snapshot(items).slice(0, HISTORY_LIMIT)));
+  }
+
+  /** Đánh dấu các file trong lịch sử đã bị xoá hoặc chuyển đi. */
+  async function checkMissingFiles() {
+    const done = items.filter((i) => i.status === "done" && i.file);
+    if (!done.length) return;
+    try {
+      const exists = await api.filesExist(done.map((i) => i.file!));
+      done.forEach((it, k) => (it.missing = !exists[k]));
+    } catch {
+      // Không kiểm tra được thì cứ để nút Mở như bình thường.
+    }
+  }
+
+  async function openFile(it: Item, reveal = false) {
+    if (!it.file) return;
+    const [exists] = await api.filesExist([it.file]).catch(() => [true]);
+    if (!exists) {
+      it.missing = true;
+      return;
+    }
+    if (reveal) revealItemInDir(it.file);
+    else openPath(it.file);
   }
 
   /** Chạy tối đa MAX_PARALLEL lượt tải cùng lúc, lượt thêm trước chạy trước. */
@@ -330,6 +401,7 @@
     api.startDownload({ id: it.id, url: it.info.url, mode: it.mode, audioFormat: it.audioFormat, quality: it.quality, title: it.title, outDir, cookies }).catch((e) => {
       it.status = "error";
       it.error = String(e);
+      saveHistory();
       pump();
     });
   }
@@ -351,27 +423,36 @@
       it.status = d.ok ? "done" : d.canceled ? "canceled" : "error";
       it.file = d.file;
       it.error = d.error;
+      it.doneAt = Date.now();
+      it.missing = false;
       if (d.ok) it.percent = 100;
+      saveHistory();
     }
     pump();
   }
 
   function cancel(it: Item) {
-    if (it.status === "queued") it.status = "canceled";
-    else api.cancelDownload(it.id);
+    if (it.status === "queued") {
+      it.status = "canceled";
+      saveHistory();
+    } else api.cancelDownload(it.id);
   }
 
   function retry(it: Item) {
     it.status = "queued";
+    it.missing = false;
+    saveHistory();
     pump();
   }
 
   function remove(it: Item) {
     items = items.filter((i) => i.id !== it.id);
+    saveHistory();
   }
 
   function clearFinished() {
     items = items.filter((i) => !["done", "error", "canceled"].includes(i.status));
+    saveHistory();
   }
 
   async function chooseDir() {
@@ -660,42 +741,56 @@
     {#if items.length}
       <section class="queue">
         <div class="queue-head">
-          <h2>Danh sách tải</h2>
+          <h2>Lịch sử tải</h2>
           {#if hasFinished}<button class="link" onclick={clearFinished}>Xoá mục đã xong</button>{/if}
         </div>
 
-        {#each items as it (it.id)}
-          <article class="card item {it.status}">
-            <div class="thumb small">
-              {#if it.info.thumbnail}<img src={it.info.thumbnail} alt="" referrerpolicy="no-referrer" />{/if}
-            </div>
-            <div class="body">
-              <div class="title" title={it.info.title}>{it.info.title}</div>
-              <div class="sub">
-                <span class="site {siteOf(it.info.site)}">{SITE_NAME[siteOf(it.info.site)]}</span>
-                <span>{itemFormat(it)}</span>
+        {#each groups as g (g.day)}
+          <h3 class="day">{g.day}</h3>
+          {#each g.items as it (it.id)}
+            <article class="card item {it.status}" class:missing={it.missing}>
+              <div class="thumb small">
+                {#if it.info.thumbnail}
+                  <!-- Link ảnh bìa (nhất là TikTok) hết hạn sau vài ngày: ẩn ảnh hỏng, để lại nền trống. -->
+                  <img
+                    src={it.info.thumbnail}
+                    alt=""
+                    referrerpolicy="no-referrer"
+                    onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = "hidden")}
+                  />
+                {/if}
               </div>
-              {#if it.status === "downloading" || it.status === "processing" || it.status === "queued"}
-                <div class="bar" class:indeterminate={it.percent == null || it.status === "processing"}>
-                  <div style:width="{it.percent ?? 0}%"></div>
+              <div class="body">
+                <div class="title" title={it.info.title}>{it.info.title}</div>
+                <div class="sub">
+                  <span class="site {siteOf(it.info.site)}">{SITE_NAME[siteOf(it.info.site)]}</span>
+                  <span>{itemFormat(it)}</span>
+                  <span title={new Date(it.doneAt ?? it.addedAt).toLocaleString("vi-VN")}>{fmtTime(it.doneAt ?? it.addedAt)}</span>
                 </div>
-              {/if}
-              <div class="status">{statusText(it)}</div>
-            </div>
-            <div class="actions">
-              {#if it.status === "done" && it.file}
-                <button onclick={() => openPath(it.file!)}>Mở</button>
-                <button onclick={() => revealItemInDir(it.file!)}>Thư mục</button>
-              {:else if it.status === "error" || it.status === "canceled"}
-                <button onclick={() => retry(it)}>Thử lại</button>
-              {/if}
-              {#if it.status === "downloading" || it.status === "processing" || it.status === "queued"}
-                <button onclick={() => cancel(it)}>Huỷ</button>
-              {:else}
-                <button class="ghost icon" title="Xoá khỏi danh sách" aria-label="Xoá" onclick={() => remove(it)}>✕</button>
-              {/if}
-            </div>
-          </article>
+                {#if it.status === "downloading" || it.status === "processing" || it.status === "queued"}
+                  <div class="bar" class:indeterminate={it.percent == null || it.status === "processing"}>
+                    <div style:width="{it.percent ?? 0}%"></div>
+                  </div>
+                {/if}
+                <div class="status">{it.missing ? "File đã bị xoá hoặc chuyển đi" : statusText(it)}</div>
+              </div>
+              <div class="actions">
+                {#if it.status === "done" && it.file && !it.missing}
+                  <button onclick={() => openFile(it)}>Mở</button>
+                  <button onclick={() => openFile(it, true)}>Thư mục</button>
+                {:else if it.missing}
+                  <button onclick={() => retry(it)}>Tải lại</button>
+                {:else if it.status === "error" || it.status === "canceled"}
+                  <button onclick={() => retry(it)}>Thử lại</button>
+                {/if}
+                {#if it.status === "downloading" || it.status === "processing" || it.status === "queued"}
+                  <button onclick={() => cancel(it)}>Huỷ</button>
+                {:else}
+                  <button class="ghost icon" title="Xoá khỏi danh sách" aria-label="Xoá" onclick={() => remove(it)}>✕</button>
+                {/if}
+              </div>
+            </article>
+          {/each}
         {/each}
       </section>
     {:else if !info && !fetching}

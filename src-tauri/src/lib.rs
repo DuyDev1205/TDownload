@@ -23,6 +23,7 @@ pub fn run() {
             download::fetch_info,
             download::start_download,
             download::cancel_download,
+            download::files_exist,
         ])
         .build(tauri::generate_context!())
         .expect("không khởi động được ứng dụng")

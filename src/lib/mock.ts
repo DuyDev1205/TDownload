@@ -3,7 +3,8 @@
 //   ?setup   màn hình cài đặt lần đầu
 //   ?update  có bản app mới
 //   ?error   "Lấy video" luôn báo lỗi
-// Link chứa chữ "fail" thì lượt tải sẽ lỗi giữa chừng.
+// Link chứa chữ "fail" thì lượt tải sẽ lỗi giữa chừng; chứa "missing" thì file tải xong bị coi là đã xoá
+// (F5 lại trang để thấy trạng thái "File đã bị xoá hoặc chuyển đi").
 
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -73,7 +74,8 @@ async function fakeDownload(id: string, url: string, mode: string, audioFormat: 
     await sleep(900);
   }
   const ext = !audio ? "mp4" : audioFormat === "original" || !audioFormat ? "opus" : audioFormat;
-  await emit("dl-done", { id, ok: true, canceled: false, file: `C:\\Users\\you\\Downloads\\video [${id.slice(0, 6)}].${ext}`, error: null });
+  const name = `${url.includes("missing") ? "missing " : ""}video [${id.slice(0, 6)}].${ext}`;
+  await emit("dl-done", { id, ok: true, canceled: false, file: `C:\\Users\\you\\Downloads\\${name}`, error: null });
 }
 
 async function fakeAppUpdate(onEvent: { onmessage: (e: unknown) => void }) {
@@ -111,6 +113,9 @@ export function install() {
         case "cancel_download":
           canceled.add(a.id);
           return null;
+        case "files_exist":
+          // Giả lập file có chữ "missing" trong tên là đã bị xoá.
+          return (a.paths as string[]).map((p) => !p.includes("missing"));
 
         case "plugin:app|version":
           return "0.2.0";

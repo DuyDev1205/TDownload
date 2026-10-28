@@ -65,6 +65,7 @@ export const startDownload = (args: {
 }) =>
   invoke<void>("start_download", args);
 export const cancelDownload = (id: string) => invoke<void>("cancel_download", { id });
+export const filesExist = (paths: string[]) => invoke<boolean[]>("files_exist", { paths });
 
 export const onDepsProgress = (cb: (p: DepsProgress) => void) => listen<DepsProgress>("deps-progress", (e) => cb(e.payload));
 export const onProgress = (cb: (p: DlProgress) => void) => listen<DlProgress>("dl-progress", (e) => cb(e.payload));

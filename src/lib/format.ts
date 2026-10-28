@@ -51,6 +51,21 @@ export function fmtDuration(sec: number | null | undefined): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
 }
 
+/** Nhãn ngày cho lịch sử tải: "Hôm nay", "Hôm qua" hoặc "Thứ Hai, 26/10/2026". */
+export function fmtDay(ts: number): string {
+  const day = new Date(ts);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (day.toDateString() === today.toDateString()) return "Hôm nay";
+  if (day.toDateString() === yesterday.toDateString()) return "Hôm qua";
+  return day.toLocaleDateString("vi-VN", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+export function fmtTime(ts: number): string {
+  return new Date(ts).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+}
+
 const QUALITY_NAME: Record<number, string> = { 4320: "8K", 2160: "4K", 1440: "2K" };
 
 export function fmtQuality(height: number | null): string {
