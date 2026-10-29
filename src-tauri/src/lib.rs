@@ -1,7 +1,6 @@
 mod deps;
 mod download;
 mod proxy;
-mod subtitle;
 
 use tauri::Manager;
 
@@ -17,7 +16,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(download::Jobs::default())
-        .manage(subtitle::Transcribes::default())
         .invoke_handler(tauri::generate_handler![
             deps::deps_status,
             deps::install_deps,
@@ -26,20 +24,13 @@ pub fn run() {
             download::start_download,
             download::cancel_download,
             download::files_exist,
-            subtitle::whisper_ready,
-            subtitle::install_whisper,
-            subtitle::probe_subtitles,
-            subtitle::extract_subtitle,
-            subtitle::transcribe,
-            subtitle::cancel_transcribe,
         ])
         .build(tauri::generate_context!())
         .expect("không khởi động được ứng dụng")
         .run(|app, event| {
-            // Đóng app thì dừng luôn các lượt tải và nhận dạng đang chạy.
+            // Đóng app thì dừng luôn các lượt tải đang chạy.
             if let tauri::RunEvent::Exit = event {
                 app.state::<download::Jobs>().kill_all();
-                app.state::<subtitle::Transcribes>().kill_all();
             }
         });
 }

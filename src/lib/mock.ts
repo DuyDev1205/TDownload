@@ -7,7 +7,6 @@
 // (F5 lại trang để thấy trạng thái "File đã bị xoá hoặc chuyển đi").
 // Link chứa "playlist", "/videos" hoặc "/sets/" trả về danh sách; link soundcloud là bài chỉ có âm thanh.
 // Chọn phụ đề tiếng Việt thì giả lập phụ đề bị chặn (video vẫn tải xong, có ghi chú).
-//   ?whisper  coi như đã cài bộ nhận dạng giọng nói (tab Tạo phụ đề)
 
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -16,31 +15,7 @@ const params = new URLSearchParams(location.search);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let depsReady = !params.has("setup");
-let whisperReady = params.has("whisper");
 const canceled = new Set<string>();
-
-/** Giả lập tải bộ nhận dạng giọng nói (thêm ?whisper vào URL để coi như đã cài sẵn). */
-async function fakeInstall(names: string[], total: number) {
-  for (const name of names) {
-    for (let done = 0; done <= total; done += total / 10) {
-      await emit("deps-progress", { name, stage: "download", downloaded: done, total });
-      await sleep(120);
-    }
-    await emit("deps-progress", { name, stage: "done", downloaded: total, total });
-  }
-}
-
-async function fakeTranscribe(id: string, language: string) {
-  await emit("tr-progress", { id, stage: "convert", percent: null });
-  await sleep(1200);
-  for (let p = 0; p <= 100; p += 5) {
-    if (canceled.has(id)) return emit("tr-done", { id, ok: false, canceled: true, file: null, error: null, language: null });
-    await emit("tr-progress", { id, stage: "transcribe", percent: p });
-    await sleep(200);
-  }
-  const lang = language === "auto" ? "vi" : language;
-  await emit("tr-done", { id, ok: true, canceled: false, file: `D:\\Videos\\Phim thử nghiệm.${lang}.srt`, error: null, language: lang });
-}
 
 const SUBS = [
   { lang: "en", name: "English", auto: false },
@@ -181,32 +156,7 @@ export function install() {
         case "plugin:clipboard-manager|read_text":
           return navigator.clipboard.readText().catch(() => "");
         case "plugin:dialog|open":
-          if (a.options?.directory) return "D:\\Videos";
-          return a.options?.filters?.[0]?.name?.startsWith("Video") ? "D:\\Videos\\Phim thử nghiệm.mkv" : "C:\\Users\\you\\cookies.txt";
-
-        case "whisper_ready":
-          return whisperReady;
-        case "install_whisper":
-          await fakeInstall(["whisper", "model"], 600_000_000);
-          whisperReady = true;
-          return null;
-        case "probe_subtitles":
-          await sleep(500);
-          return [
-            { index: 2, codec: "subrip", language: "eng", title: null, text: true },
-            { index: 3, codec: "subrip", language: "vie", title: "Phụ đề Việt", text: true },
-            { index: 4, codec: "hdmv_pgs_subtitle", language: "jpn", title: null, text: false },
-          ];
-        case "extract_subtitle":
-          await sleep(600);
-          return `D:\\Videos\\Phim thử nghiệm.${a.language ?? `track${a.index}`}.srt`;
-        case "transcribe":
-          canceled.delete(a.id);
-          fakeTranscribe(a.id, a.language);
-          return null;
-        case "cancel_transcribe":
-          canceled.add(a.id);
-          return null;
+          return a.options?.directory ? "D:\\Videos" : "C:\\Users\\you\\cookies.txt";
         case "plugin:updater|check":
           return params.has("update")
             ? { rid: 1, currentVersion: "0.2.0", version: "0.3.0", date: new Date().toISOString(), body: "", rawJson: {} }
