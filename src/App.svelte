@@ -8,17 +8,30 @@
   import { relaunch } from "@tauri-apps/plugin-process";
   import { check, type Update } from "@tauri-apps/plugin-updater";
   import * as api from "./lib/api";
-  import type { AudioFormat, DepsProgress, DepsStatus, DlDone, DlProgress, Mode, VideoInfo } from "./lib/api";
+  import type {
+    AudioFormat,
+    DepsProgress,
+    DepsStatus,
+    DlDone,
+    DlProgress,
+    Mode,
+    PlaylistInfo,
+    Subtitle,
+    VideoInfo,
+  } from "./lib/api";
   import {
     SITE_NAME,
     extractUrl,
+    extractUrls,
     fmtBytes,
     fmtDay,
     fmtDuration,
     fmtQuality,
     fmtTime,
     isKnownSite,
+    normalizeUrl,
     siteOf,
+    subtitleName,
   } from "./lib/format";
   import { load, save } from "./lib/storage";
   import Logo from "./lib/Logo.svelte";
@@ -33,6 +46,10 @@
     quality: number | null;
     /** Tên người dùng tự đặt; null là giữ tiêu đề gốc. */
     title: string | null;
+    /** Không có ở lịch sử lưu từ bản cũ. */
+    subtitle?: Subtitle | null;
+    /** Ghi chú khi tải xong nhưng thiếu phần phụ (ví dụ phụ đề bị chặn). */
+    note?: string | null;
     status: Status;
     percent: number | null;
     speed: number | null;
@@ -98,17 +115,35 @@
   let fetchError = $state("");
   let info = $state<VideoInfo | null>(null);
   let customTitle = $state("");
+  /** Vị trí phụ đề đã chọn trong info.subtitles; -1 là không tải phụ đề. */
+  let subtitleIndex = $state(-1);
   let urlInput = $state<HTMLInputElement>();
+
+  // Link playlist/kênh: danh sách video kèm ô chọn.
+  let playlist = $state<PlaylistInfo | null>(null);
+  let picked = $state<boolean[]>([]);
+  const pickedCount = $derived(picked.filter(Boolean).length);
+
+  // Dán nhiều link một lúc: đọc lần lượt từng link rồi tự thêm vào danh sách tải.
+  const urlList = $derived(extractUrls(url));
+  const isBatch = $derived(urlList.length > 1);
+  let batchRead = $state<number | null>(null);
+
+  /** SoundCloud và các trang chỉ có âm thanh thì chỉ cho chọn "Chỉ âm thanh". */
+  const audioOnly = $derived(
+    info ? info.heights.length === 0 : playlist ? siteOf(playlist.site) === "soundcloud" : false,
+  );
 
   // Bản cũ lưu chế độ "mp3": chuyển sang "Chỉ âm thanh" với định dạng MP3 như trước.
   const savedMode = load("mode", "best");
   let mode = $state<Mode>(savedMode === "mp3" ? "audio" : (savedMode as Mode));
   let audioFormat = $state<AudioFormat>(load("audioFormat", savedMode === "mp3" ? "mp3" : "original") as AudioFormat);
   const audioHint = $derived(AUDIO_FORMATS.find((f) => f.value === audioFormat)?.hint ?? "");
+  const effectiveMode = $derived<Mode>(audioOnly ? "audio" : mode);
   /** Độ phân giải tối đa muốn tải; null là lấy cao nhất có thể. */
   let quality = $state<number | null>(null);
   // Chế độ Tương thích chỉ lấy tới 1080p nên ẩn các mức cao hơn.
-  const qualityOptions = $derived(info ? info.heights.filter((h) => mode !== "compat" || h <= 1080) : []);
+  const qualityOptions = $derived(info ? info.heights.filter((h) => effectiveMode !== "compat" || h <= 1080) : []);
   // Chưa chọn (hoặc mức đã chọn không có ở chế độ này) thì lấy mức cao nhất của video.
   const chosenQuality = $derived(
     quality != null && qualityOptions.includes(quality) ? quality : (qualityOptions[0] ?? null),
@@ -262,52 +297,74 @@
     }
   }
 
-  async function clipboardUrl(): Promise<string | null> {
+  async function clipboardUrls(): Promise<string[]> {
     try {
-      return extractUrl((await readText()) ?? "");
+      return extractUrls((await readText()) ?? "");
     } catch {
-      return null;
+      return [];
     }
   }
 
-  /** Khi quay lại app, nếu clipboard có link YouTube/TikTok/Facebook mới (khác link đang có trong ô) thì tự dán. */
+  /** Đưa link từ clipboard vào ô: một link thì đọc luôn; nhiều link thì chờ chọn chế độ rồi bấm tải. */
+  function useLinks(links: string[]) {
+    url = links.join(" ");
+    if (links.length === 1) getInfo();
+    else resetPreview();
+  }
+
+  /** Khi quay lại app, nếu clipboard có link YouTube/TikTok/Facebook/SoundCloud mới thì tự dán. */
   async function autoPaste() {
-    if (fetching || !deps?.ready) return;
-    const found = await clipboardUrl();
-    if (found && isKnownSite(found) && found !== lastAutoPaste && found !== url.trim()) {
-      lastAutoPaste = found;
-      url = found;
-      getInfo();
+    if (fetching || batchRead != null || !deps?.ready) return;
+    const links = (await clipboardUrls()).filter(isKnownSite);
+    const key = links.join(" ");
+    if (links.length && key !== lastAutoPaste && key !== url.trim()) {
+      lastAutoPaste = key;
+      useLinks(links);
     }
+  }
+
+  function resetPreview() {
+    info = null;
+    playlist = null;
+    picked = [];
+    fetchError = "";
+    customTitle = "";
+    subtitleIndex = -1;
+    quality = null;
   }
 
   function clearUrl() {
     url = "";
-    info = null;
-    fetchError = "";
-    customTitle = "";
+    resetPreview();
     urlInput?.focus();
   }
 
   async function pasteNow() {
-    const found = await clipboardUrl();
-    if (found) {
-      url = found;
-      getInfo();
-    }
+    const links = await clipboardUrls();
+    if (links.length) useLinks(links);
+  }
+
+  function submit() {
+    if (isBatch) addBatch();
+    else getInfo();
   }
 
   async function getInfo() {
-    const target = extractUrl(url) ?? url.trim();
-    if (!target || fetching) return;
+    const found = extractUrl(url) ?? url.trim();
+    if (!found || fetching) return;
+    const target = normalizeUrl(found);
     url = target;
     fetching = true;
-    fetchError = "";
-    info = null;
-    quality = null;
+    resetPreview();
     try {
-      info = await api.fetchInfo(target, cookies);
-      customTitle = info.title;
+      const result = await api.fetchInfo(target, cookies);
+      if (result.kind === "playlist") {
+        playlist = result;
+        picked = result.entries.map(() => true);
+      } else {
+        info = result;
+        customTitle = result.title;
+      }
     } catch (e) {
       fetchError = String(e);
     } finally {
@@ -315,17 +372,91 @@
     }
   }
 
+  /** Mức chất lượng cao nhất của video cho chế độ đang chọn (Tương thích chỉ tới 1080p). */
+  function bestQuality(vi: VideoInfo, m: Mode): number | null {
+    return vi.heights.find((h) => m !== "compat" || h <= 1080) ?? null;
+  }
+
   function enqueue() {
     if (!info) return;
     const typed = customTitle.trim();
     const title = typed && typed !== info.title ? typed : null;
+    addItem(
+      { ...$state.snapshot(info), title: title ?? info.title },
+      effectiveMode,
+      chosenQuality,
+      title,
+      info.subtitles[subtitleIndex] ?? null,
+    );
+    info = null;
+    url = "";
+    saveHistory();
+    pump();
+  }
+
+  /** Thêm các video đã chọn trong playlist. Dùng luôn thông tin của danh sách nên không phải đọc lại từng video. */
+  function enqueuePlaylist() {
+    if (!playlist) return;
+    const site = playlist.site.replace(/(Tab|Set|Playlist|User)$/i, "");
+    playlist.entries.forEach((e, i) => {
+      if (!picked[i]) return;
+      const vi: VideoInfo = {
+        title: e.title,
+        thumbnail: e.thumbnail,
+        duration: e.duration,
+        uploader: playlist!.uploader,
+        site,
+        maxHeight: null,
+        heights: [],
+        subtitles: [],
+        url: e.url,
+      };
+      addItem(vi, effectiveMode, null);
+    });
+    url = "";
+    resetPreview();
+    saveHistory();
+    pump();
+  }
+
+  /** Đọc lần lượt từng link đã dán; đọc được cái nào thì thêm vào danh sách tải ngay cái đó. */
+  async function addBatch() {
+    if (fetching || batchRead != null) return;
+    const links = urlList.map(normalizeUrl);
+    const failed: string[] = [];
+    resetPreview();
+    batchRead = 0;
+    for (const link of links) {
+      try {
+        const result = await api.fetchInfo(link, cookies);
+        if (result.kind === "playlist") {
+          failed.push(`${link}\n  Đây là playlist/kênh: dán riêng link này để chọn video.`);
+        } else {
+          const m = result.heights.length ? mode : "audio";
+          addItem(result, m, m === "audio" ? null : bestQuality(result, m));
+          saveHistory();
+          pump();
+        }
+      } catch (e) {
+        failed.push(`${link}\n  ${String(e).split("\n").pop()}`);
+      }
+      batchRead++;
+    }
+    batchRead = null;
+    url = failed.length ? failed.map((f) => f.split("\n")[0]).join(" ") : "";
+    fetchError = failed.length ? `${failed.length}/${links.length} link không lấy được:\n${failed.join("\n")}` : "";
+  }
+
+  function addItem(vi: VideoInfo, m: Mode, quality: number | null, title: string | null = null, subtitle: Subtitle | null = null) {
     items.unshift({
       id: crypto.randomUUID(),
-      info: { ...$state.snapshot(info), title: title ?? info.title },
-      mode,
-      audioFormat: mode === "audio" ? audioFormat : null,
-      quality: mode === "audio" ? null : chosenQuality,
+      info: vi,
+      mode: m,
+      audioFormat: m === "audio" ? audioFormat : null,
+      quality: m === "audio" ? null : quality,
       title,
+      subtitle,
+      note: null,
       status: "queued",
       percent: null,
       speed: null,
@@ -337,10 +468,6 @@
       addedAt: Date.now(),
       doneAt: null,
     });
-    info = null;
-    url = "";
-    saveHistory();
-    pump();
   }
 
   /** Nạp lịch sử tải từ lần trước. Mục đang tải dở khi tắt app chuyển sang lỗi để có nút Thử lại. */
@@ -398,7 +525,18 @@
 
   function start(it: Item) {
     Object.assign(it, { status: "downloading", percent: null, speed: null, eta: null, part: 0, stage: "", file: null, error: null });
-    api.startDownload({ id: it.id, url: it.info.url, mode: it.mode, audioFormat: it.audioFormat, quality: it.quality, title: it.title, outDir, cookies }).catch((e) => {
+    const args = {
+      id: it.id,
+      url: it.info.url,
+      mode: it.mode,
+      audioFormat: it.audioFormat,
+      quality: it.quality,
+      title: it.title,
+      subtitle: it.subtitle ?? null,
+      outDir,
+      cookies,
+    };
+    api.startDownload(args).catch((e) => {
       it.status = "error";
       it.error = String(e);
       saveHistory();
@@ -423,6 +561,7 @@
       it.status = d.ok ? "done" : d.canceled ? "canceled" : "error";
       it.file = d.file;
       it.error = d.error;
+      it.note = d.note;
       it.doneAt = Date.now();
       it.missing = false;
       if (d.ok) it.percent = 100;
@@ -522,10 +661,45 @@
   /** Mô tả ngắn cách tải của một mục, ví dụ "Video · 720p", "Video · Tương thích · 1080p" hoặc "Chỉ âm thanh · FLAC". */
   function itemFormat(it: Item): string {
     const title = MODES.find((x) => x.value === it.mode)?.title ?? it.mode;
-    if (it.audioFormat) return `${title} · ${AUDIO_FORMATS.find((f) => f.value === it.audioFormat)?.label}`;
-    return it.quality ? `${title} · ${fmtQuality(it.quality)}` : title;
+    const parts = [title];
+    if (it.audioFormat) parts.push(AUDIO_FORMATS.find((f) => f.value === it.audioFormat)?.label ?? "");
+    else if (it.quality) parts.push(fmtQuality(it.quality));
+    if (it.subtitle) parts.push(`Phụ đề ${subtitleName(it.subtitle)}`);
+    return parts.join(" · ");
   }
 </script>
+
+<!-- Chọn chế độ tải và định dạng âm thanh; dùng chung cho một video, playlist và nhiều link.
+     Trang chỉ có âm thanh (SoundCloud) thì chỉ hiện "Chỉ âm thanh" và không đổi lựa chọn đã lưu của người dùng. -->
+{#snippet formatPicker(onlyAudio: boolean)}
+  {@const current = onlyAudio ? "audio" : mode}
+  <div class="modes" class:single={onlyAudio} role="radiogroup">
+    {#each MODES.filter((m) => !onlyAudio || m.value === "audio") as m (m.value)}
+      <button
+        role="radio"
+        aria-checked={current === m.value}
+        class="mode"
+        class:selected={current === m.value}
+        onclick={() => !onlyAudio && (mode = m.value)}
+      >
+        <b>{modeTitle(m.value)}</b>
+        <small>{onlyAudio ? "Trang này chỉ có âm thanh" : m.hint}</small>
+      </button>
+    {/each}
+  </div>
+
+  {#if current === "audio"}
+    <div class="qualities" role="radiogroup" aria-label="Định dạng âm thanh">
+      <span class="label">Định dạng</span>
+      {#each AUDIO_FORMATS as f (f.value)}
+        <button role="radio" aria-checked={audioFormat === f.value} class:selected={audioFormat === f.value} onclick={() => (audioFormat = f.value)}>
+          {f.label}
+        </button>
+      {/each}
+    </div>
+    <p class="note format-hint">{audioHint}</p>
+  {/if}
+{/snippet}
 
 <main>
   <header>
@@ -533,7 +707,7 @@
       <Logo size={46} />
       <div>
         <h1>VidSaver</h1>
-        <p>YouTube · TikTok · Facebook</p>
+        <p>YouTube · TikTok · Facebook · SoundCloud</p>
       </div>
     </div>
     <button class="ghost" class:active={showSettings} onclick={() => (showSettings = !showSettings)}>
@@ -645,26 +819,42 @@
         class="input"
         onsubmit={(e) => {
           e.preventDefault();
-          getInfo();
+          submit();
         }}
       >
         <div class="url-field">
           <input
             bind:this={urlInput}
             bind:value={url}
-            placeholder="Dán link video YouTube, TikTok hoặc Facebook…"
+            placeholder="Dán link video, playlist, kênh… (dán nhiều link cùng lúc cũng được)"
             spellcheck="false"
             autocomplete="off"
           />
-          {#if url && !fetching}
+          {#if url && !fetching && batchRead == null}
             <button type="button" class="clear" title="Xoá link" aria-label="Xoá link" onclick={clearUrl}>✕</button>
           {/if}
         </div>
-        <button type="button" onclick={pasteNow} disabled={fetching}>Dán</button>
-        <button type="submit" class="primary" disabled={fetching || !url.trim()}>
-          {fetching ? "Đang đọc…" : "Lấy video"}
+        <button type="button" onclick={pasteNow} disabled={fetching || batchRead != null}>Dán</button>
+        <button type="submit" class="primary" disabled={fetching || batchRead != null || !url.trim() || (isBatch && !outDir)}>
+          {#if batchRead != null}
+            Đang đọc {batchRead}/{urlList.length}…
+          {:else if fetching}
+            Đang đọc…
+          {:else if isBatch}
+            Tải {urlList.length} link
+          {:else}
+            Lấy video
+          {/if}
         </button>
       </form>
+
+      {#if isBatch && batchRead == null && !fetching}
+        <p class="note batch-note">
+          Đã nhận <b>{urlList.length} link</b>. Chọn cách tải bên dưới rồi bấm <b>Tải {urlList.length} link</b>: app đọc lần
+          lượt từng link và tự thêm vào danh sách tải, mỗi video lấy chất lượng cao nhất.
+        </p>
+        {@render formatPicker(false)}
+      {/if}
 
       {#if fetching}
         <div class="preview skeleton">
@@ -698,32 +888,9 @@
           </div>
         </div>
 
-        <div class="modes" role="radiogroup">
-          {#each MODES as m (m.value)}
-            <button
-              role="radio"
-              aria-checked={mode === m.value}
-              class="mode"
-              class:selected={mode === m.value}
-              onclick={() => (mode = m.value)}
-            >
-              <b>{modeTitle(m.value)}</b>
-              <small>{m.hint}</small>
-            </button>
-          {/each}
-        </div>
+        {@render formatPicker(audioOnly)}
 
-        {#if mode === "audio"}
-          <div class="qualities" role="radiogroup" aria-label="Định dạng âm thanh">
-            <span class="label">Định dạng</span>
-            {#each AUDIO_FORMATS as f (f.value)}
-              <button role="radio" aria-checked={audioFormat === f.value} class:selected={audioFormat === f.value} onclick={() => (audioFormat = f.value)}>
-                {f.label}
-              </button>
-            {/each}
-          </div>
-          <p class="note format-hint">{audioHint}</p>
-        {:else if qualityOptions.length > 1}
+        {#if effectiveMode !== "audio" && qualityOptions.length > 1}
           <div class="qualities" role="radiogroup" aria-label="Chất lượng">
             <span class="label">Chất lượng</span>
             {#each qualityOptions as h (h)}
@@ -734,7 +901,81 @@
           </div>
         {/if}
 
+        {#if info.subtitles.length}
+          <div class="qualities" role="radiogroup" aria-label="Phụ đề">
+            <span class="label">Phụ đề</span>
+            <button role="radio" aria-checked={subtitleIndex < 0} class:selected={subtitleIndex < 0} onclick={() => (subtitleIndex = -1)}>
+              Không
+            </button>
+            {#each info.subtitles as s, i (s.lang + s.auto)}
+              <button role="radio" aria-checked={subtitleIndex === i} class:selected={subtitleIndex === i} onclick={() => (subtitleIndex = i)}>
+                {subtitleName(s)}
+              </button>
+            {/each}
+          </div>
+          {#if subtitleIndex >= 0}
+            <p class="note format-hint">
+              {effectiveMode === "audio"
+                ? "Phụ đề được lưu thành file .srt cạnh file âm thanh."
+                : "Phụ đề được gắn vào video (bật/tắt trong trình phát) và lưu thêm file .srt cạnh video."}
+            </p>
+          {/if}
+        {/if}
+
         <button class="primary big" onclick={enqueue} disabled={!outDir}>Tải về</button>
+      {/if}
+
+      {#if playlist}
+        {@const site = siteOf(playlist.site)}
+        <div class="playlist">
+          <div class="playlist-head">
+            <div class="tags">
+              <span class="site {site}">{SITE_NAME[site]}</span>
+              <span class="tag">
+                {playlist.entries.length} mục{playlist.count && playlist.count > playlist.entries.length
+                  ? ` (trong ${playlist.count}, lấy ${playlist.entries.length} mục mới nhất)`
+                  : ""}
+              </span>
+            </div>
+            <h3>{playlist.title}</h3>
+            {#if playlist.uploader}<p class="muted">{playlist.uploader}</p>{/if}
+          </div>
+
+          <div class="playlist-tools">
+            <span class="muted">Đã chọn {pickedCount}/{playlist.entries.length}</span>
+            <button class="link" onclick={() => (picked = picked.map(() => pickedCount < picked.length))}>
+              {pickedCount < picked.length ? "Chọn tất cả" : "Bỏ chọn tất cả"}
+            </button>
+          </div>
+
+          <ul class="playlist-list">
+            {#each playlist.entries as e, i (i)}
+              <li>
+                <label>
+                  <input type="checkbox" bind:checked={picked[i]} />
+                  <span class="thumb tiny">
+                    {#if e.thumbnail}
+                      <img
+                        src={e.thumbnail}
+                        alt=""
+                        loading="lazy"
+                        referrerpolicy="no-referrer"
+                        onerror={(ev) => ((ev.currentTarget as HTMLImageElement).style.visibility = "hidden")}
+                      />
+                    {/if}
+                  </span>
+                  <span class="entry-title" title={e.title}>{e.title}</span>
+                  {#if e.duration}<small class="muted">{fmtDuration(e.duration)}</small>{/if}
+                </label>
+              </li>
+            {/each}
+          </ul>
+
+          {@render formatPicker(audioOnly)}
+          <button class="primary big" onclick={enqueuePlaylist} disabled={!outDir || !pickedCount}>
+            Tải {pickedCount} {audioOnly ? "bài" : "video"}
+          </button>
+        </div>
       {/if}
     </section>
 
@@ -773,6 +1014,7 @@
                   </div>
                 {/if}
                 <div class="status">{it.missing ? "File đã bị xoá hoặc chuyển đi" : statusText(it)}</div>
+                {#if it.note && it.status === "done"}<div class="item-note">{it.note}</div>{/if}
               </div>
               <div class="actions">
                 {#if it.status === "done" && it.file && !it.missing}

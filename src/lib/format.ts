@@ -1,9 +1,46 @@
-const KNOWN_SITE = /(^|\.)(youtube\.com|youtu\.be|tiktok\.com|facebook\.com|fb\.watch|fb\.com)$/i;
+import type { Subtitle } from "./api";
+
+const KNOWN_SITE = /(^|\.)(youtube\.com|youtu\.be|tiktok\.com|facebook\.com|fb\.watch|fb\.com|soundcloud\.com)$/i;
+
+/**
+ * Lấy mọi link trong đoạn văn bản, bỏ trùng. Ô nhập một dòng xoá dấu xuống dòng khi dán nhiều link nên các link
+ * có thể dính liền nhau ("https://a...https://b..."): cắt ở mỗi chỗ bắt đầu "http(s)://".
+ */
+export function extractUrls(text: string): string[] {
+  const found = text.match(/https?:\/\/.+?(?=https?:\/\/|[\s"'<>]|$)/gi) ?? [];
+  return [...new Set(found)];
+}
 
 /** Lấy link đầu tiên trong đoạn văn bản (link chia sẻ TikTok thường kèm chữ phía trước). */
 export function extractUrl(text: string): string | null {
-  const m = text.match(/https?:\/\/[^\s"'<>]+/i);
-  return m ? m[0] : null;
+  return extractUrls(text)[0] ?? null;
+}
+
+/** Link trang chủ kênh YouTube chỉ trả về các tab, nên chuyển sang tab Videos. */
+export function normalizeUrl(url: string): string {
+  const m = url.match(/^(https?:\/\/(?:www\.|m\.)?youtube\.com\/(?:@[^/?#]+|channel\/[^/?#]+|c\/[^/?#]+|user\/[^/?#]+))\/?(?:[?#].*)?$/i);
+  return m ? `${m[1]}/videos` : url;
+}
+
+const LANGUAGE_NAMES = (() => {
+  try {
+    return new Intl.DisplayNames(["vi"], { type: "language" });
+  } catch {
+    return null;
+  }
+})();
+
+/** Tên phụ đề tiếng Việt, ví dụ "Tiếng Anh" hoặc "Tiếng Anh · tự động". */
+export function subtitleName(sub: Subtitle): string {
+  const code = sub.lang.replace(/-orig$/, "");
+  let name = sub.name;
+  try {
+    name = LANGUAGE_NAMES?.of(code) ?? sub.name;
+  } catch {
+    // Mã ngôn ngữ lạ thì giữ tên yt-dlp đưa.
+  }
+  name = name.charAt(0).toUpperCase() + name.slice(1);
+  return sub.auto ? `${name} · tự động` : name;
 }
 
 export function isKnownSite(url: string): boolean {
@@ -14,13 +51,14 @@ export function isKnownSite(url: string): boolean {
   }
 }
 
-export type Site = "youtube" | "tiktok" | "facebook" | "other";
+export type Site = "youtube" | "tiktok" | "facebook" | "soundcloud" | "other";
 
 export function siteOf(extractor: string): Site {
   const s = extractor.toLowerCase();
   if (s.includes("youtube")) return "youtube";
   if (s.includes("tiktok")) return "tiktok";
   if (s.includes("facebook")) return "facebook";
+  if (s.includes("soundcloud")) return "soundcloud";
   return "other";
 }
 
@@ -28,6 +66,7 @@ export const SITE_NAME: Record<Site, string> = {
   youtube: "YouTube",
   tiktok: "TikTok",
   facebook: "Facebook",
+  soundcloud: "SoundCloud",
   other: "Web",
 };
 

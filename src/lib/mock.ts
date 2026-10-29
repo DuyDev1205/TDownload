@@ -5,6 +5,8 @@
 //   ?error   "Lấy video" luôn báo lỗi
 // Link chứa chữ "fail" thì lượt tải sẽ lỗi giữa chừng; chứa "missing" thì file tải xong bị coi là đã xoá
 // (F5 lại trang để thấy trạng thái "File đã bị xoá hoặc chuyển đi").
+// Link chứa "playlist", "/videos" hoặc "/sets/" trả về danh sách; link soundcloud là bài chỉ có âm thanh.
+// Chọn phụ đề tiếng Việt thì giả lập phụ đề bị chặn (video vẫn tải xong, có ghi chú).
 
 import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
@@ -15,21 +17,50 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let depsReady = !params.has("setup");
 const canceled = new Set<string>();
 
+const SUBS = [
+  { lang: "en", name: "English", auto: false },
+  { lang: "vi", name: "Vietnamese", auto: false },
+  { lang: "en-orig", name: "English (Original)", auto: true },
+];
+
 const SAMPLES = {
-  Youtube: { title: "Lofi hip hop radio – beats to relax/study to", uploader: "Lofi Girl", duration: 7384, heights: [2160, 1440, 1080, 720, 480, 360, 240, 144] },
-  TikTok: { title: "Quan quan hà quan | Lê Bảo cover 🎶 #nhachay", uploader: "lebaomusic", duration: 58, heights: [1080, 720, 540] },
-  Facebook: { title: "Highlight trận đấu tối qua", uploader: "VTV Thể thao", duration: 312, heights: [720, 360] },
+  Youtube: { title: "Lofi hip hop radio – beats to relax/study to", uploader: "Lofi Girl", duration: 7384, heights: [2160, 1440, 1080, 720, 480, 360, 240, 144], subtitles: SUBS },
+  TikTok: { title: "Quan quan hà quan | Lê Bảo cover 🎶 #nhachay", uploader: "lebaomusic", duration: 58, heights: [1080, 720, 540], subtitles: [] },
+  Facebook: { title: "Highlight trận đấu tối qua", uploader: "VTV Thể thao", duration: 312, heights: [720, 360], subtitles: [] },
+  Soundcloud: { title: "Flickermood", uploader: "Forss", duration: 213, heights: [], subtitles: [] },
 };
 
+function siteFor(url: string): keyof typeof SAMPLES {
+  if (/soundcloud/i.test(url)) return "Soundcloud";
+  if (/tiktok/i.test(url)) return "TikTok";
+  if (/facebook|fb\.watch/i.test(url)) return "Facebook";
+  return "Youtube";
+}
+
 function sampleInfo(url: string) {
-  const site = /tiktok/i.test(url) ? "TikTok" : /facebook|fb\.watch/i.test(url) ? "Facebook" : "Youtube";
+  const site = siteFor(url);
+  if (/playlist|\/videos|\/sets\//i.test(url)) {
+    return {
+      kind: "playlist",
+      title: site === "Soundcloud" ? "Soulhack" : "Nhạc chill cuối tuần",
+      uploader: SAMPLES[site].uploader,
+      site: site === "Soundcloud" ? "SoundcloudSet" : "YoutubeTab",
+      count: site === "Soundcloud" ? 11 : 182,
+      entries: Array.from({ length: site === "Soundcloud" ? 11 : 24 }, (_, i) => ({
+        url: `${url}#${i + 1}`,
+        title: `${site === "Soundcloud" ? "track" : "Video"} số ${i + 1} – ${SAMPLES[site].title}`,
+        duration: 120 + i * 17,
+        thumbnail: site === "Soundcloud" ? null : placeholder(site),
+      })),
+    };
+  }
   const s = SAMPLES[site];
-  return { ...s, site, url, maxHeight: s.heights[0], thumbnail: placeholder(site) };
+  return { kind: "video", ...s, site, url, maxHeight: s.heights[0] ?? null, thumbnail: placeholder(site) };
 }
 
 /** Ảnh bìa giả vẽ bằng SVG, không cần mạng. */
 function placeholder(site: string) {
-  const color = { Youtube: "#ff0033", TikTok: "#25f4ee", Facebook: "#1877f2" }[site] ?? "#6d5dfc";
+  const color = { Youtube: "#ff0033", TikTok: "#25f4ee", Facebook: "#1877f2", Soundcloud: "#ff5500" }[site] ?? "#6d5dfc";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
     <defs><linearGradient id="g" x2="1" y2="1"><stop offset="0" stop-color="${color}"/><stop offset="1" stop-color="#1b1d27"/></linearGradient></defs>
     <rect width="640" height="360" fill="url(#g)"/><polygon points="290,140 290,220 360,180" fill="#fff" opacity=".85"/></svg>`;
@@ -50,7 +81,7 @@ async function installDeps() {
   depsReady = true;
 }
 
-async function fakeDownload(id: string, url: string, mode: string, audioFormat: string | null) {
+async function fakeDownload(id: string, url: string, mode: string, audioFormat: string | null, subtitleLang: string | null) {
   const audio = mode === "audio";
   const parts = audio ? 1 : 2;
   for (let part = 1; part <= parts; part++) {
@@ -75,7 +106,8 @@ async function fakeDownload(id: string, url: string, mode: string, audioFormat: 
   }
   const ext = !audio ? "mp4" : audioFormat === "original" || !audioFormat ? "opus" : audioFormat;
   const name = `${url.includes("missing") ? "missing " : ""}video [${id.slice(0, 6)}].${ext}`;
-  await emit("dl-done", { id, ok: true, canceled: false, file: `C:\\Users\\you\\Downloads\\${name}`, error: null });
+  const note = subtitleLang === "vi" ? "Không tải được phụ đề (trang tạm chặn, thử lại sau)." : null;
+  await emit("dl-done", { id, ok: true, canceled: false, file: `C:\\Users\\you\\Downloads\\${name}`, error: null, note });
 }
 
 async function fakeAppUpdate(onEvent: { onmessage: (e: unknown) => void }) {
@@ -108,7 +140,7 @@ export function install() {
           return sampleInfo(a.url);
         case "start_download":
           canceled.delete(a.id);
-          fakeDownload(a.id, a.url, a.mode, a.audioFormat);
+          fakeDownload(a.id, a.url, a.mode, a.audioFormat, a.subtitle?.lang ?? null);
           return null;
         case "cancel_download":
           canceled.add(a.id);

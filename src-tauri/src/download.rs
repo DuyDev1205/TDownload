@@ -115,6 +115,16 @@ fn cookie_args(cookies: &str) -> Vec<String> {
     }
 }
 
+/// Phụ đề tải kèm video.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Subtitle {
+    /// Mã ngôn ngữ đúng như yt-dlp liệt kê, ví dụ "en" hoặc "en-orig".
+    lang: String,
+    name: String,
+    /// Phụ đề tự động (nhận dạng giọng nói) thay vì do người đăng làm.
+    auto: bool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoInfo {
@@ -124,15 +134,48 @@ pub struct VideoInfo {
     uploader: Option<String>,
     site: String,
     max_height: Option<u64>,
-    /// Các độ phân giải có sẵn, giảm dần.
+    /// Các độ phân giải có sẵn, giảm dần. Rỗng nghĩa là chỉ có âm thanh (ví dụ SoundCloud).
     heights: Vec<u64>,
+    subtitles: Vec<Subtitle>,
     url: String,
 }
 
+#[derive(Serialize)]
+pub struct PlaylistEntry {
+    url: String,
+    title: String,
+    duration: Option<f64>,
+    thumbnail: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaylistInfo {
+    title: String,
+    uploader: Option<String>,
+    site: String,
+    /// Tổng số mục của danh sách nếu trang cho biết (có thể nhiều hơn số mục lấy về).
+    count: Option<u64>,
+    entries: Vec<PlaylistEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum FetchResult {
+    Video(VideoInfo),
+    Playlist(PlaylistInfo),
+}
+
+/// Số mục tối đa lấy về khi dán link playlist/kênh, để kênh có hàng nghìn video vẫn mở nhanh.
+const PLAYLIST_LIMIT: u32 = 300;
+
 #[tauri::command]
-pub async fn fetch_info(app: AppHandle, url: String, cookies: String) -> Result<VideoInfo, String> {
+pub async fn fetch_info(app: AppHandle, url: String, cookies: String) -> Result<FetchResult, String> {
+    // --no-playlist: link video kèm &list=... vẫn là một video; link chỉ là playlist/kênh thì trả về danh sách.
+    // --flat-playlist: chỉ đọc danh sách (tiêu đề, link) chứ không mở từng video, nên playlist dài vẫn nhanh.
     let out = deps::command(&app, "yt-dlp")?
-        .args(["-J", "--no-playlist", "--no-warnings"])
+        .args(["-J", "--no-playlist", "--flat-playlist", "--no-warnings"])
+        .args(["--playlist-end", &PLAYLIST_LIMIT.to_string()])
         .args(proxy::args())
         .args(cookie_args(&cookies))
         .arg("--")
@@ -144,11 +187,79 @@ pub async fn fetch_info(app: AppHandle, url: String, cookies: String) -> Result<
         return Err(friendly_error(&String::from_utf8_lossy(&out.stderr)));
     }
 
-    let mut v: Value = serde_json::from_slice(&out.stdout).map_err(err)?;
+    let v: Value = serde_json::from_slice(&out.stdout).map_err(err)?;
     if v["_type"] == "playlist" {
-        v = v["entries"].get(0).cloned().ok_or_else(|| "Link là danh sách phát nhưng không có video nào.".to_string())?;
+        playlist_info(&v).map(FetchResult::Playlist)
+    } else {
+        Ok(FetchResult::Video(video_info(&v, url)))
     }
+}
 
+fn playlist_info(v: &Value) -> Result<PlaylistInfo, String> {
+    let all = v["entries"].as_array().cloned().unwrap_or_default();
+    // Link trang chủ kênh YouTube trả về các tab (Videos, Shorts) thay vì video.
+    if !all.is_empty() && all.iter().all(|e| e["_type"] == "playlist") {
+        return Err("Đây là trang chủ của kênh. Mở tab Videos (link kết thúc bằng /videos) rồi copy lại link.".into());
+    }
+    let entries: Vec<PlaylistEntry> = all
+        .iter()
+        .filter_map(|e| {
+            let url = e["url"].as_str().or(e["webpage_url"].as_str())?.to_string();
+            // SoundCloud không kèm tiêu đề trong danh sách: lấy từ link, ví dụ ".../city-ports" thành "city ports".
+            let title = e["title"].as_str().filter(|s| !s.is_empty()).map(str::to_owned).unwrap_or_else(|| {
+                url.trim_end_matches('/').rsplit('/').next().unwrap_or(&url).replace(&['-', '_'][..], " ")
+            });
+            let thumbnail = e["thumbnails"]
+                .as_array()
+                .and_then(|t| t.last())
+                .and_then(|t| t["url"].as_str())
+                .or(e["thumbnail"].as_str())
+                .map(str::to_owned);
+            Some(PlaylistEntry { url, title, duration: e["duration"].as_f64(), thumbnail })
+        })
+        .collect();
+    if entries.is_empty() {
+        return Err("Danh sách này không có video nào tải được.".into());
+    }
+    let text = |k: &str| v[k].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
+    Ok(PlaylistInfo {
+        title: text("title").unwrap_or_else(|| "Danh sách phát".into()),
+        uploader: text("uploader").or_else(|| text("channel")),
+        site: text("extractor_key").unwrap_or_default(),
+        count: v["playlist_count"].as_u64(),
+        entries,
+    })
+}
+
+/// Phụ đề người đăng làm, cộng phụ đề tự động theo ngôn ngữ gốc của video. Bỏ phụ đề dịch máy của YouTube
+/// (hàng trăm ngôn ngữ) vì YouTube gần như luôn chặn tải chúng (HTTP 429).
+fn subtitles(v: &Value) -> Vec<Subtitle> {
+    let list = |key: &str, auto: bool| -> Vec<Subtitle> {
+        v[key]
+            .as_object()
+            .map(|m| {
+                m.iter()
+                    .filter(|(lang, _)| lang.as_str() != "live_chat")
+                    .map(|(lang, tracks)| Subtitle {
+                        lang: lang.clone(),
+                        name: tracks[0]["name"].as_str().unwrap_or(lang).to_string(),
+                        auto,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut subs = list("subtitles", false);
+    let autos = list("automatic_captions", true);
+    if autos.iter().any(|s| s.lang.ends_with("-orig")) {
+        subs.extend(autos.into_iter().filter(|s| s.lang.ends_with("-orig")));
+    } else if autos.len() <= 5 {
+        subs.extend(autos);
+    }
+    subs
+}
+
+fn video_info(v: &Value, url: String) -> VideoInfo {
     let text = |k: &str| v[k].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
     // Độ phân giải tính theo cạnh ngắn như yt-dlp, để video dọc 1080x1920 vẫn là 1080p.
     let res = |f: &Value| match (f["width"].as_u64(), f["height"].as_u64()) {
@@ -168,12 +279,12 @@ pub async fn fetch_info(app: AppHandle, url: String, cookies: String) -> Result<
         })
         .unwrap_or_default();
     if heights.is_empty() {
-        heights.extend(res(&v));
+        heights.extend(res(v));
     }
     heights.sort_unstable_by(|a, b| b.cmp(a));
     heights.dedup();
 
-    Ok(VideoInfo {
+    VideoInfo {
         title: text("title").unwrap_or_else(|| "Không có tiêu đề".into()),
         thumbnail: text("thumbnail"),
         duration: v["duration"].as_f64(),
@@ -181,8 +292,9 @@ pub async fn fetch_info(app: AppHandle, url: String, cookies: String) -> Result<
         site: text("extractor_key").unwrap_or_default(),
         max_height: heights.first().copied(),
         heights,
+        subtitles: subtitles(v),
         url: text("webpage_url").unwrap_or(url),
-    })
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -205,6 +317,8 @@ struct Done {
     canceled: bool,
     file: Option<String>,
     error: Option<String>,
+    /// Ghi chú khi tải xong nhưng có phần phụ bị thiếu (ví dụ phụ đề bị chặn).
+    note: Option<String>,
 }
 
 #[derive(Default)]
@@ -212,7 +326,27 @@ struct LineState {
     format_id: String,
     part: u32,
     file: Option<String>,
+    subtitle_failed: bool,
     log: Vec<String>,
+}
+
+/// Tải phụ đề kèm theo: video thì gắn vào file và giữ thêm file .srt, âm thanh thì chỉ lưu file .srt.
+/// Có `-i` để phụ đề bị chặn (YouTube hay trả HTTP 429) không làm hỏng cả lượt tải; video lỗi thật thì
+/// yt-dlp vẫn trả mã lỗi nên app vẫn biết.
+fn subtitle_args(mode: Mode, subtitle: Option<&Subtitle>) -> Vec<String> {
+    let Some(s) = subtitle else { return vec![] };
+    let mut args: Vec<String> = vec![
+        if s.auto { "--write-auto-subs" } else { "--write-subs" }.into(),
+        "--sub-langs".into(),
+        s.lang.clone(),
+        "--convert-subs".into(),
+        "srt".into(),
+        "-i".into(),
+    ];
+    if !matches!(mode, Mode::Audio) {
+        args.push("--embed-subs".into());
+    }
+    args
 }
 
 #[tauri::command]
@@ -225,6 +359,7 @@ pub async fn start_download(
     audio_format: Option<AudioFormat>,
     quality: Option<u32>,
     title: Option<String>,
+    subtitle: Option<Subtitle>,
     out_dir: String,
     cookies: String,
 ) -> Result<(), String> {
@@ -245,6 +380,7 @@ pub async fn start_download(
         .args(cookie_args(&cookies))
         .args(mode_args(mode, audio_format.unwrap_or(AudioFormat::Original)))
         .args(quality_args(mode, quality))
+        .args(subtitle_args(mode, subtitle.as_ref()))
         .arg("--")
         .arg(&url)
         .stdout(Stdio::piped())
@@ -271,6 +407,8 @@ pub async fn start_download(
                 canceled,
                 file: s.file.clone(),
                 error: (!success && !canceled).then(|| friendly_error(&s.log.join("\n"))),
+                note: (success && s.subtitle_failed)
+                    .then(|| "Không tải được phụ đề (trang tạm chặn, thử lại sau).".to_string()),
             }
         };
         let _ = app.emit("dl-done", done);
@@ -343,6 +481,9 @@ fn handle_line(app: &AppHandle, id: &str, state: &Mutex<LineState>, line: &str) 
     } else if let Some(path) = line.strip_prefix("FILE|") {
         s.file = Some(path.to_owned());
     } else if !line.is_empty() {
+        if line.contains("Unable to download video subtitles") {
+            s.subtitle_failed = true;
+        }
         s.log.push(line.to_owned());
         if s.log.len() > 50 {
             s.log.remove(0);
@@ -399,14 +540,19 @@ fn friendly_error(log: &str) -> String {
         .to_string();
     let low = detail.to_lowercase();
 
-    let browser_cookie_error = low.contains("cookie")
-        && ["chrome", "edge", "brave", "dpapi", "decrypt", "could not copy"].iter().any(|k| low.contains(k));
+    // Chrome/Edge bản mới khoá cookie (app-bound encryption), lỗi báo về chỉ có chữ "DPAPI" chứ không có "cookie".
+    let browser_cookie_error = ["dpapi", "app-bound", "app bound"].iter().any(|k| low.contains(k))
+        || (low.contains("cookie")
+            && ["chrome", "edge", "brave", "decrypt", "could not copy"].iter().any(|k| low.contains(k)));
     let hint = if browser_cookie_error {
-        "Không đọc được cookie từ trình duyệt. Hãy tắt hẳn trình duyệt rồi thử lại, hoặc dùng Firefox / file cookies.txt."
+        "Không đọc được cookie từ trình duyệt (Chrome/Edge bản mới khoá cookie lại). Video công khai thì vào Cài đặt → \
+         Cookie đăng nhập → Không dùng. Cần đăng nhập thì dùng Firefox hoặc file cookies.txt."
     } else if ["login", "log in", "sign in", "cookies", "private", "registered users", "not a bot"].iter().any(|k| low.contains(k)) {
         "Video cần đăng nhập hoặc là video riêng tư. Vào Cài đặt → Cookie đăng nhập, chọn trình duyệt bạn đã đăng nhập."
     } else if ["resolving timed out", "could not resolve", "getaddrinfo", "timed out", "connection refused"].iter().any(|k| low.contains(k)) {
         "Không kết nối được tới trang web. Kiểm tra mạng (hoặc VPN/proxy) rồi thử lại."
+    } else if low.contains("tiktok:user") || low.contains("secondary user id") {
+        "yt-dlp hiện chưa tải được cả trang cá nhân TikTok. Hãy copy link từng video (có thể dán nhiều link một lúc)."
     } else if low.contains("unsupported url") {
         "Link này không được hỗ trợ."
     } else if low.contains("ffmpeg") || low.contains("postprocessing") {
