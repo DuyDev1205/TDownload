@@ -139,7 +139,8 @@
         title: title.trim(),
         description: description.trim(),
         contact: contact.trim(),
-        appVersion: await getVersion().catch(() => ""),
+        // Thêm "v" để Google Sheet không hiểu "0.5.1" thành ngày tháng.
+        appVersion: await getVersion().then((v) => `v${v}`).catch(() => ""),
         os: systemInfo(),
         images: images.map(({ mime, data }) => ({ mime, data })),
       });
