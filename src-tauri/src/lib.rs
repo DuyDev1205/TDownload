@@ -6,8 +6,14 @@ use tauri::Manager;
 
 pub fn run() {
     tauri::Builder::default()
-        .setup(|_| {
+        .setup(|app| {
             proxy::start();
+            // Bản 0.5.0 có tính năng tạo phụ đề (đã gỡ) tải bộ nhận dạng ~600 MB vào bin/whisper: xoá cho đỡ chiếm chỗ.
+            if let Ok(dir) = deps::bin_dir(app.handle()) {
+                std::thread::spawn(move || {
+                    let _ = std::fs::remove_dir_all(dir.join("whisper"));
+                });
+            }
             Ok(())
         })
         .plugin(tauri_plugin_opener::init())
