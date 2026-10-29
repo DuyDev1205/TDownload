@@ -237,10 +237,7 @@
         </div>
       {/each}
       {#if images.length < MAX_IMAGES}
-        <button class="add-shot" onclick={() => fileInput?.click()}>
-          <b>+ Thêm ảnh</b>
-          <small>hoặc dán bằng Ctrl+V</small>
-        </button>
+        <button class="add-shot" onclick={() => fileInput?.click()}><b>+ Thêm ảnh</b></button>
       {/if}
       <input
         bind:this={fileInput}
@@ -255,8 +252,7 @@
       />
     </div>
 
-    <input bind:value={contact} maxlength="200" placeholder="Liên hệ của bạn (không bắt buộc): tên, Zalo, email…" />
-    <p class="note">App tự gửi kèm phiên bản VidSaver và hệ điều hành để dễ tìm lỗi.</p>
+    <input bind:value={contact} maxlength="200" placeholder="Liên hệ của bạn" />
 
     {#if sendError}<p class="error">{sendError}</p>{/if}
     {#if sentNote}<p class="ok-note">{sentNote}</p>{/if}
