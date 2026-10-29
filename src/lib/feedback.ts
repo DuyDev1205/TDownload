@@ -5,7 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { load, save } from "./storage";
 
 /** URL ứng dụng web của Apps Script (Triển khai → Ứng dụng web). Rỗng nghĩa là chưa thiết lập. */
-export const FEEDBACK_URL =
+export const FEEDBACK_URL: string =
   "https://script.google.com/macros/s/AKfycbwlXdwhC9N5KHHxcHqnp3ohM0vZOBYas8QvifRAg7PtykY01cfY-fdSAOmWcOxGd1TI/exec";
 
 export type FeedbackType = "feature" | "bug";
