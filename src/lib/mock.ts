@@ -2,6 +2,7 @@
 // Thêm tham số vào URL để xem các trạng thái khác:
 //   ?setup   màn hình cài đặt lần đầu
 //   ?update  có bản app mới
+// Tab "Góp ý & báo lỗi": mã quản trị giả là "admin"; tiêu đề có chữ "duyệt" thì 5 giây sau được chấp nhận.
 //   ?error   "Lấy video" luôn báo lỗi
 // Link chứa chữ "fail" thì lượt tải sẽ lỗi giữa chừng; chứa "missing" thì file tải xong bị coi là đã xoá
 // (F5 lại trang để thấy trạng thái "File đã bị xoá hoặc chuyển đi").
@@ -16,6 +17,78 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let depsReady = !params.has("setup");
 const canceled = new Set<string>();
+
+// Máy chủ góp ý giả (thay cho Apps Script). Mã quản trị: "admin". Góp ý có chữ "duyệt" trong tiêu đề sẽ được
+// "chấp nhận" sau 5 giây để xem chấm đỏ báo kết quả mới.
+interface FakeFeedback {
+  id: string;
+  createdAt: string;
+  type: string;
+  title: string;
+  description: string;
+  contact: string;
+  appVersion: string;
+  os: string;
+  images: string[];
+  status: string;
+  reply: string;
+  updatedAt: string;
+}
+const feedbackRows: FakeFeedback[] = [
+  {
+    id: "demo-1",
+    createdAt: new Date(Date.now() - 86_400_000).toISOString(),
+    type: "bug",
+    title: "Không tải được video Facebook riêng tư",
+    description: "Dán link video trong nhóm kín thì báo lỗi đăng nhập.\nĐã chọn cookie Chrome.",
+    contact: "Zalo 09xx",
+    appVersion: "0.5.1",
+    os: "Windows (NT 10.0)",
+    images: [],
+    status: "pending",
+    reply: "",
+    updatedAt: new Date().toISOString(),
+  },
+];
+const feedbackImages: Record<string, { mime: string; data: string }> = {};
+
+function fakeFeedback(req: Record<string, any>) {
+  const admin = () => {
+    if (req.adminKey !== "admin") throw "Sai mã quản trị.";
+  };
+  switch (req.action) {
+    case "submit": {
+      const id = crypto.randomUUID();
+      const images = (req.images ?? []).map((img: { mime: string; data: string }, i: number) => {
+        feedbackImages[`${id}-${i}`] = img;
+        return `${id}-${i}`;
+      });
+      const now = new Date().toISOString();
+      const row = { ...req, id, images, status: "pending", reply: "", createdAt: now, updatedAt: now } as FakeFeedback;
+      feedbackRows.push(row);
+      if (/duyệt/i.test(row.title)) {
+        setTimeout(() => Object.assign(row, { status: "accepted", reply: "Ý tưởng hay, bản sau sẽ có nhé!" }), 5000);
+      }
+      return { id };
+    }
+    case "status":
+      return feedbackRows.filter((r) => req.ids.includes(r.id)).map(({ id, status, reply, updatedAt }) => ({ id, status, reply, updatedAt }));
+    case "list":
+      admin();
+      return [...feedbackRows].reverse();
+    case "image":
+      admin();
+      return feedbackImages[req.fileId];
+    case "review": {
+      admin();
+      const row = feedbackRows.find((r) => r.id === req.id);
+      if (!row) throw "Không tìm thấy góp ý.";
+      Object.assign(row, { status: req.status, reply: req.reply, updatedAt: new Date().toISOString() });
+      return { id: row.id, status: row.status, updatedAt: row.updatedAt };
+    }
+  }
+  throw "Yêu cầu không hợp lệ.";
+}
 
 const SUBS = [
   { lang: "en", name: "English", auto: false },
@@ -145,6 +218,9 @@ export function install() {
         case "cancel_download":
           canceled.add(a.id);
           return null;
+        case "feedback_request":
+          await sleep(500);
+          return fakeFeedback(a.body);
         case "files_exist":
           // Giả lập file có chữ "missing" trong tên là đã bị xoá.
           return (a.paths as string[]).map((p) => !p.includes("missing"));

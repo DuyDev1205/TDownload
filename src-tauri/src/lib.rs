@@ -1,5 +1,6 @@
 mod deps;
 mod download;
+mod feedback;
 mod proxy;
 
 use tauri::Manager;
@@ -30,6 +31,7 @@ pub fn run() {
             download::start_download,
             download::cancel_download,
             download::files_exist,
+            feedback::feedback_request,
         ])
         .build(tauri::generate_context!())
         .expect("không khởi động được ứng dụng")

@@ -35,6 +35,7 @@
   } from "./lib/format";
   import { load, save } from "./lib/storage";
   import Logo from "./lib/Logo.svelte";
+  import FeedbackTab from "./lib/FeedbackTab.svelte";
 
   type Status = "queued" | "downloading" | "processing" | "done" | "error" | "canceled";
 
@@ -155,6 +156,8 @@
     cookieKind === "file" ? (cookieFile ? `file:${cookieFile}` : "") : cookieKind ? `browser:${cookieKind}` : "",
   );
 
+  let tab = $state<"download" | "feedback">("download");
+  let feedbackUnseen = $state(0);
   let showSettings = $state(false);
   let updating = $state(false);
   let updateMsg = $state("");
@@ -314,7 +317,7 @@
 
   /** Khi quay lại app, nếu clipboard có link YouTube/TikTok/Facebook/SoundCloud mới thì tự dán. */
   async function autoPaste() {
-    if (fetching || batchRead != null || !deps?.ready) return;
+    if (fetching || batchRead != null || !deps?.ready || tab !== "download") return;
     const links = (await clipboardUrls()).filter(isKnownSite);
     const key = links.join(" ");
     if (links.length && key !== lastAutoPaste && key !== url.trim()) {
@@ -814,6 +817,23 @@
       </button>
     </section>
   {:else if deps}
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected={tab === "download"} class:active={tab === "download"} onclick={() => (tab = "download")}>
+        Tải video
+      </button>
+      <button role="tab" aria-selected={tab === "feedback"} class:active={tab === "feedback"} onclick={() => (tab = "feedback")}>
+        Góp ý & báo lỗi
+        {#if feedbackUnseen}<span class="dot" title="Có phản hồi mới"></span>{/if}
+      </button>
+    </div>
+
+    <!-- Luôn giữ tab góp ý để nó tự kiểm tra kết quả và báo chấm đỏ cả khi đang ở tab khác. -->
+    <div class="tab-page" hidden={tab !== "feedback"}>
+      <FeedbackTab active={tab === "feedback"} bind:unseen={feedbackUnseen} />
+    </div>
+  {/if}
+
+  {#if deps?.ready && tab === "download"}
     <section class="card">
       <form
         class="input"
