@@ -744,6 +744,122 @@ select:focus {
   margin-top: 30px;
 }
 
+/* Chuyển giữa "Tải video" và "Tạo phụ đề" */
+.tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  align-self: flex-start;
+}
+
+.tabs button {
+  border: none;
+  background: transparent;
+  padding: 7px 16px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.tabs button.active {
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+/* Tạo phụ đề */
+.subtitle-tool {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.subtitle-tool h3 {
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.subtitle-tool p {
+  margin: 0;
+}
+
+.subtitle-tool .pick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.subtitle-tool .file,
+.out-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.streams,
+.outputs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.streams li,
+.outputs li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--field);
+}
+
+.streams li > span,
+.out-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.out-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.subtitle-tool .install {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.subtitle-tool .install .deps li {
+  grid-template-columns: 130px 1fr 150px;
+}
+
+.subtitle-tool .qualities {
+  margin-top: 0;
+}
+
+.job {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.job-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 /* Bản quyền, luôn nằm cuối cửa sổ */
 footer {
   margin-top: auto;

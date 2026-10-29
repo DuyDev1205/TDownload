@@ -35,6 +35,7 @@
   } from "./lib/format";
   import { load, save } from "./lib/storage";
   import Logo from "./lib/Logo.svelte";
+  import SubtitleTool from "./lib/SubtitleTool.svelte";
 
   type Status = "queued" | "downloading" | "processing" | "done" | "error" | "canceled";
 
@@ -155,6 +156,7 @@
     cookieKind === "file" ? (cookieFile ? `file:${cookieFile}` : "") : cookieKind ? `browser:${cookieKind}` : "",
   );
 
+  let tab = $state<"download" | "subtitle">("download");
   let showSettings = $state(false);
   let updating = $state(false);
   let updateMsg = $state("");
@@ -314,7 +316,7 @@
 
   /** Khi quay lại app, nếu clipboard có link YouTube/TikTok/Facebook/SoundCloud mới thì tự dán. */
   async function autoPaste() {
-    if (fetching || batchRead != null || !deps?.ready) return;
+    if (fetching || batchRead != null || !deps?.ready || tab !== "download") return;
     const links = (await clipboardUrls()).filter(isKnownSite);
     const key = links.join(" ");
     if (links.length && key !== lastAutoPaste && key !== url.trim()) {
@@ -814,6 +816,20 @@
       </button>
     </section>
   {:else if deps}
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected={tab === "download"} class:active={tab === "download"} onclick={() => (tab = "download")}>
+        Tải video
+      </button>
+      <button role="tab" aria-selected={tab === "subtitle"} class:active={tab === "subtitle"} onclick={() => (tab = "subtitle")}>
+        Tạo phụ đề
+      </button>
+    </div>
+
+    <!-- Giữ trang phụ đề trong DOM khi chuyển tab để không mất tiến độ đang nhận dạng. -->
+    <div hidden={tab !== "subtitle"}><SubtitleTool /></div>
+  {/if}
+
+  {#if deps?.ready && tab === "download"}
     <section class="card">
       <form
         class="input"

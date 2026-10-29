@@ -77,6 +77,31 @@ export interface DlDone {
   note: string | null;
 }
 
+export interface SubtitleStream {
+  index: number;
+  codec: string;
+  language: string | null;
+  title: string | null;
+  /** Phụ đề dạng chữ, tách ra .srt được (dạng hình ảnh như PGS/DVD thì không). */
+  text: boolean;
+}
+
+export interface TrProgress {
+  id: string;
+  stage: "convert" | "transcribe";
+  percent: number | null;
+}
+
+export interface TrDone {
+  id: string;
+  ok: boolean;
+  canceled: boolean;
+  file: string | null;
+  error: string | null;
+  /** Ngôn ngữ Whisper nhận ra khi chọn "Tự nhận". */
+  language: string | null;
+}
+
 export const depsStatus = () => invoke<DepsStatus>("deps_status");
 export const installDeps = (force = false) => invoke<void>("install_deps", { force });
 export const updateYtdlp = () => invoke<string>("update_ytdlp");
@@ -98,6 +123,16 @@ export const startDownload = (args: {
 export const cancelDownload = (id: string) => invoke<void>("cancel_download", { id });
 export const filesExist = (paths: string[]) => invoke<boolean[]>("files_exist", { paths });
 
+export const whisperReady = () => invoke<boolean>("whisper_ready");
+export const installWhisper = () => invoke<void>("install_whisper");
+export const probeSubtitles = (path: string) => invoke<SubtitleStream[]>("probe_subtitles", { path });
+export const extractSubtitle = (path: string, index: number, language: string | null) =>
+  invoke<string>("extract_subtitle", { path, index, language });
+export const transcribe = (id: string, path: string, language: string) => invoke<void>("transcribe", { id, path, language });
+export const cancelTranscribe = (id: string) => invoke<void>("cancel_transcribe", { id });
+
 export const onDepsProgress = (cb: (p: DepsProgress) => void) => listen<DepsProgress>("deps-progress", (e) => cb(e.payload));
 export const onProgress = (cb: (p: DlProgress) => void) => listen<DlProgress>("dl-progress", (e) => cb(e.payload));
 export const onDone = (cb: (d: DlDone) => void) => listen<DlDone>("dl-done", (e) => cb(e.payload));
+export const onTrProgress = (cb: (p: TrProgress) => void) => listen<TrProgress>("tr-progress", (e) => cb(e.payload));
+export const onTrDone = (cb: (d: TrDone) => void) => listen<TrDone>("tr-done", (e) => cb(e.payload));

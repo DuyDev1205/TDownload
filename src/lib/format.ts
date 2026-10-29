@@ -30,6 +30,17 @@ const LANGUAGE_NAMES = (() => {
   }
 })();
 
+/** Tên tiếng Việt của mã ngôn ngữ ("en", "eng", "vie"...); mã lạ hoặc "und" trả về null. */
+export function languageName(code: string | null | undefined): string | null {
+  if (!code || code === "und") return null;
+  try {
+    const name = LANGUAGE_NAMES?.of(code);
+    return name && name !== code && name !== "root" ? name.charAt(0).toUpperCase() + name.slice(1) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Tên phụ đề tiếng Việt, ví dụ "Tiếng Anh" hoặc "Tiếng Anh · tự động". */
 export function subtitleName(sub: Subtitle): string {
   const code = sub.lang.replace(/-orig$/, "");

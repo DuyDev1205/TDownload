@@ -24,29 +24,36 @@ pub fn err<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
 
-enum Unpack {
+pub enum Unpack {
     /// File tải về chính là file chạy, lưu với tên này.
     Raw(&'static str),
     /// File zip, lấy ra các file chạy có tên này (ở bất kỳ thư mục con nào).
     Zip(&'static [&'static str]),
+    /// File zip, lấy ra file chạy này cùng mọi thư viện .dll đi kèm (whisper.cpp trên Windows cần các dll nằm
+    /// cạnh file chạy).
+    ZipWithLibs(&'static str),
+    /// File dữ liệu (ví dụ mô hình AI), lưu nguyên tên này.
+    Data(&'static str),
 }
 
-struct Package {
-    name: &'static str,
-    url: String,
-    unpack: Unpack,
+pub struct Package {
+    pub name: &'static str,
+    pub url: String,
+    pub unpack: Unpack,
 }
 
 impl Package {
-    fn files(&self) -> Vec<&'static str> {
+    /// Các file phải có sau khi cài, dùng để biết gói đã được cài chưa.
+    fn files(&self) -> Vec<String> {
         match self.unpack {
-            Unpack::Raw(name) => vec![name],
-            Unpack::Zip(names) => names.to_vec(),
+            Unpack::Raw(name) | Unpack::ZipWithLibs(name) => vec![format!("{name}{EXE}")],
+            Unpack::Zip(names) => names.iter().map(|n| format!("{n}{EXE}")).collect(),
+            Unpack::Data(file) => vec![file.to_string()],
         }
     }
 
-    fn installed(&self, dir: &Path) -> bool {
-        self.files().iter().all(|f| dir.join(format!("{f}{EXE}")).exists())
+    pub fn installed(&self, dir: &Path) -> bool {
+        self.files().iter().all(|f| dir.join(f).exists())
     }
 }
 
@@ -186,19 +193,25 @@ fn emit_progress(app: &AppHandle, name: &'static str, stage: &'static str, downl
 #[tauri::command]
 pub async fn install_deps(app: AppHandle, force: bool) -> Result<(), String> {
     let dir = bin_dir(&app)?;
+    install_packages(&app, packages(), &dir, force).await
+}
+
+/// Tải và cài lần lượt các gói vào `dir`, báo tiến độ qua event "deps-progress". Gói đã có thì bỏ qua (trừ khi `force`).
+pub async fn install_packages(app: &AppHandle, list: Vec<Package>, dir: &Path, force: bool) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(err)?;
     let client = reqwest::Client::builder().user_agent("VidSaver").build().map_err(err)?;
 
-    for pkg in packages() {
-        if !force && pkg.installed(&dir) {
-            emit_progress(&app, pkg.name, "done", 0, None);
+    for pkg in list {
+        if !force && pkg.installed(dir) {
+            emit_progress(app, pkg.name, "done", 0, None);
             continue;
         }
 
         let tmp = dir.join(format!("{}.download", pkg.name));
-        let result = install_one(&app, &client, &pkg, &dir, &tmp).await;
+        let result = install_one(app, &client, &pkg, dir, &tmp).await;
         let _ = std::fs::remove_file(&tmp);
         result?;
-        emit_progress(&app, pkg.name, "done", 0, None);
+        emit_progress(app, pkg.name, "done", 0, None);
     }
     Ok(())
 }
@@ -207,19 +220,22 @@ async fn install_one(app: &AppHandle, client: &reqwest::Client, pkg: &Package, d
     download_file(app, client, pkg, tmp).await?;
     emit_progress(app, pkg.name, "extract", 0, None);
 
+    let move_to = |file: String| -> Result<PathBuf, String> {
+        let target = dir.join(file);
+        let _ = std::fs::remove_file(&target);
+        std::fs::rename(tmp, &target).map_err(err)?;
+        Ok(target)
+    };
+    let unzip = |wanted: Vec<String>, with_libs: bool| {
+        let (zip_path, dir) = (tmp.to_path_buf(), dir.to_path_buf());
+        tauri::async_runtime::spawn_blocking(move || extract(&zip_path, &dir, &wanted, with_libs))
+    };
+
     match pkg.unpack {
-        Unpack::Raw(name) => {
-            let target = dir.join(format!("{name}{EXE}"));
-            let _ = std::fs::remove_file(&target);
-            std::fs::rename(tmp, &target).map_err(err)?;
-            make_executable(&target)
-        }
-        Unpack::Zip(names) => {
-            let (zip_path, dir) = (tmp.to_path_buf(), dir.to_path_buf());
-            tauri::async_runtime::spawn_blocking(move || extract(&zip_path, &dir, names))
-                .await
-                .map_err(err)?
-        }
+        Unpack::Raw(name) => make_executable(&move_to(format!("{name}{EXE}"))?),
+        Unpack::Data(file) => move_to(file.to_string()).map(|_| ()),
+        Unpack::Zip(names) => unzip(names.iter().map(|n| format!("{n}{EXE}")).collect(), false).await.map_err(err)?,
+        Unpack::ZipWithLibs(name) => unzip(vec![format!("{name}{EXE}")], true).await.map_err(err)?,
     }
 }
 
@@ -249,7 +265,8 @@ async fn download_file(app: &AppHandle, client: &reqwest::Client, pkg: &Package,
     Ok(())
 }
 
-fn extract(zip_path: &Path, dir: &Path, wanted: &[&str]) -> Result<(), String> {
+/// Lấy các file `wanted` (theo tên, ở bất kỳ thư mục con nào) ra `dir`; `with_libs` thì lấy thêm mọi file .dll.
+fn extract(zip_path: &Path, dir: &Path, wanted: &[String], with_libs: bool) -> Result<(), String> {
     let mut archive = zip::ZipArchive::new(std::fs::File::open(zip_path).map_err(err)?).map_err(err)?;
     let mut found = 0;
     for i in 0..archive.len() {
@@ -260,14 +277,17 @@ fn extract(zip_path: &Path, dir: &Path, wanted: &[&str]) -> Result<(), String> {
         let Some(base) = Path::new(entry.name()).file_name().and_then(|s| s.to_str()).map(str::to_owned) else {
             continue;
         };
-        if !wanted.iter().any(|w| base == format!("{w}{EXE}")) {
+        let is_wanted = wanted.iter().any(|w| *w == base);
+        if !is_wanted && !(with_libs && base.to_lowercase().ends_with(".dll")) {
             continue;
         }
         let target = dir.join(&base);
         let mut out = std::fs::File::create(&target).map_err(err)?;
         std::io::copy(&mut entry, &mut out).map_err(err)?;
         make_executable(&target)?;
-        found += 1;
+        if is_wanted {
+            found += 1;
+        }
     }
     if found < wanted.len() {
         return Err(format!("Gói tải về thiếu file: {}", wanted.join(", ")));
