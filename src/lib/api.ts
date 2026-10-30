@@ -80,7 +80,9 @@ export interface DlDone {
 export const depsStatus = () => invoke<DepsStatus>("deps_status");
 export const installDeps = (force = false) => invoke<void>("install_deps", { force });
 export const updateYtdlp = () => invoke<string>("update_ytdlp");
-export const fetchInfo = (url: string, cookies: string) => invoke<FetchResult>("fetch_info", { url, cookies });
+/** `playlist`: link video kèm &list=... thì lấy cả danh sách thay vì một video. */
+export const fetchInfo = (url: string, cookies: string, playlist = false) =>
+  invoke<FetchResult>("fetch_info", { url, cookies, playlist });
 export const startDownload = (args: {
   id: string;
   url: string;

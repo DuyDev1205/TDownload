@@ -79,6 +79,20 @@ function fakeFeedback(req: Record<string, any>) {
     case "image":
       admin();
       return feedbackImages[req.fileId];
+    case "ping":
+      return {};
+    case "stats":
+      admin();
+      return {
+        total: 57,
+        day: 9,
+        week: 23,
+        month: 41,
+        newWeek: 6,
+        internal: 2,
+        versions: { "v0.6.1": 30, "v0.6.0": 8, "v0.5.1": 3 },
+        systems: { Windows: 33, macOS: 8 },
+      };
     case "review": {
       admin();
       const row = feedbackRows.find((r) => r.id === req.id);
@@ -210,7 +224,7 @@ export function install() {
           if (params.has("error") || a.url.includes("error")) {
             throw "Video cần đăng nhập hoặc là video riêng tư. Vào Cài đặt → Cookie đăng nhập, chọn trình duyệt bạn đã đăng nhập.\nERROR: [TikTok] 123: This video is private";
           }
-          return sampleInfo(a.url);
+          return sampleInfo(a.playlist && /[?&]list=/.test(a.url) ? `${a.url}&playlist` : a.url);
         case "start_download":
           canceled.delete(a.id);
           fakeDownload(a.id, a.url, a.mode, a.audioFormat, a.subtitle?.lang ?? null);

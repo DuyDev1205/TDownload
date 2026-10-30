@@ -76,6 +76,23 @@ export const adminImage = (adminKey: string, fileId: string) => request<ImageDat
 export const adminReview = (adminKey: string, id: string, status: FeedbackStatus, reply: string) =>
   request<{ id: string; status: FeedbackStatus; updatedAt: string }>({ action: "review", adminKey, id, status, reply });
 
+/** Thống kê người dùng thật (không tính máy nội bộ đã đăng nhập Quản trị). */
+export interface UsageStats {
+  total: number;
+  day: number;
+  week: number;
+  month: number;
+  newWeek: number;
+  internal: number;
+  /** Số máy dùng trong 30 ngày qua theo phiên bản / hệ điều hành. */
+  versions: Record<string, number>;
+  systems: Record<string, number>;
+}
+
+export const ping = (args: { installId: string; appVersion: string; os: string; adminKey: string }) =>
+  request<Record<string, never>>({ action: "ping", ...args });
+export const adminStats = (adminKey: string) => request<UsageStats>({ action: "stats", adminKey });
+
 export function loadSent(): SentItem[] {
   try {
     return JSON.parse(load("feedbackSent", "[]")) as SentItem[];

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { getVersion } from "@tauri-apps/api/app";
   import * as fb from "./feedback";
-  import type { AdminItem, FeedbackStatus, FeedbackType, ImageData, SentItem } from "./feedback";
+  import type { AdminItem, FeedbackStatus, FeedbackType, ImageData, SentItem, UsageStats } from "./feedback";
   import { load, save } from "./storage";
+  import { appVersionTag, reportUsage, systemInfo } from "./usage";
 
   /** `active`: tab đang hiển thị. `unseen`: số góp ý có kết quả mới chưa xem (để App hiện chấm đỏ). */
   let { active, unseen = $bindable(0) }: { active: boolean; unseen?: number } = $props();
@@ -44,6 +44,15 @@
   let saving = $state<string | null>(null);
   let adminImages = $state<Record<string, string>>({});
   let viewer = $state<string | null>(null);
+  let stats = $state<UsageStats | null>(null);
+  let statsError = $state("");
+
+  /** "v0.6.1: 3 · v0.6.0: 1", nhiều máy nhất trước. */
+  const breakdown = (counts: Record<string, number>) =>
+    Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, n]) => `${name || "?"}: ${n}`)
+      .join(" · ") || "—";
 
   const shownItems = $derived((adminItems ?? []).filter((i) => filter === "all" || i.status === filter));
   const pendingCount = $derived((adminItems ?? []).filter((i) => i.status === "pending").length);
@@ -119,14 +128,6 @@
     }
   }
 
-  function systemInfo(): string {
-    const ua = navigator.userAgent;
-    const mac = ua.match(/Mac OS X ([\d_]+)/);
-    if (mac) return `macOS ${mac[1].replace(/_/g, ".")}`;
-    const win = ua.match(/Windows NT ([\d.]+)/);
-    return win ? `Windows (NT ${win[1]})` : ua.slice(0, 80);
-  }
-
   async function send() {
     if (!title.trim() || sending) return;
     sending = true;
@@ -139,8 +140,7 @@
         title: title.trim(),
         description: description.trim(),
         contact: contact.trim(),
-        // Thêm "v" để Google Sheet không hiểu "0.5.1" thành ngày tháng.
-        appVersion: await getVersion().then((v) => `v${v}`).catch(() => ""),
+        appVersion: await appVersionTag(),
         os: systemInfo(),
         images: images.map(({ mime, data }) => ({ mime, data })),
       });
@@ -167,8 +167,13 @@
       if (key !== adminKey) {
         adminKey = key;
         save("feedbackAdminKey", key);
+        reportUsage(true); // Đánh dấu ngay máy này là máy nội bộ.
       }
       showLogin = false;
+      fb.adminStats(key).then(
+        (s) => ((stats = s), (statsError = "")),
+        (e) => (statsError = String(e)),
+      );
     } catch (e) {
       adminError = String(e);
     } finally {
@@ -179,6 +184,7 @@
   function logout() {
     adminKey = "";
     adminItems = null;
+    stats = null;
     save("feedbackAdminKey", "");
   }
 
@@ -280,6 +286,28 @@
 
   <section class="admin">
     {#if adminKey && adminItems}
+      <div class="queue-head"><h2>Người dùng</h2></div>
+      {#if stats}
+        <div class="card usage">
+          <div class="usage-tiles">
+            {#each [[stats.day, "24 giờ qua"], [stats.week, "7 ngày qua"], [stats.month, "30 ngày qua"], [stats.total, "Tổng số máy"]] as [n, label] (label)}
+              <div><b>{n}</b><small class="muted">{label}</small></div>
+            {/each}
+          </div>
+          <small class="muted">Máy mới trong 7 ngày: {stats.newWeek}</small>
+          <small class="muted">Phiên bản (30 ngày): {breakdown(stats.versions)}</small>
+          <small class="muted">Hệ điều hành (30 ngày): {breakdown(stats.systems)}</small>
+          <small class="muted">
+            Chỉ tính máy đã cài và mở app, mỗi máy một lần dù mở bao nhiêu lần. Không tính {stats.internal} máy nội bộ (đã
+            đăng nhập Quản trị).
+          </small>
+        </div>
+      {:else if statsError}
+        <p class="error">Chưa xem được thống kê: {statsError} Hãy cập nhật Code.gs trên Apps Script (xem hướng dẫn đầu file).</p>
+      {:else}
+        <p class="muted">Đang tải thống kê…</p>
+      {/if}
+
       <div class="queue-head">
         <h2>Quản lý góp ý {pendingCount ? `· ${pendingCount} đang chờ` : ""}</h2>
         <div class="admin-tools">

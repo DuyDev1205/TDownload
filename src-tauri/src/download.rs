@@ -170,11 +170,18 @@ pub enum FetchResult {
 const PLAYLIST_LIMIT: u32 = 300;
 
 #[tauri::command]
-pub async fn fetch_info(app: AppHandle, url: String, cookies: String) -> Result<FetchResult, String> {
+pub async fn fetch_info(
+    app: AppHandle,
+    url: String,
+    cookies: String,
+    playlist: Option<bool>,
+) -> Result<FetchResult, String> {
     // --no-playlist: link video kèm &list=... vẫn là một video; link chỉ là playlist/kênh thì trả về danh sách.
+    // `playlist`: app gửi khi link video kèm &list=... để hiện cả danh sách cho người dùng chọn.
     // --flat-playlist: chỉ đọc danh sách (tiêu đề, link) chứ không mở từng video, nên playlist dài vẫn nhanh.
+    let which = if playlist.unwrap_or(false) { "--yes-playlist" } else { "--no-playlist" };
     let out = deps::command(&app, "yt-dlp")?
-        .args(["-J", "--no-playlist", "--flat-playlist", "--no-warnings"])
+        .args(["-J", which, "--flat-playlist", "--no-warnings"])
         .args(["--playlist-end", &PLAYLIST_LIMIT.to_string()])
         .args(proxy::args())
         .args(cookie_args(&cookies))

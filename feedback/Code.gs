@@ -17,10 +17,15 @@ const STATUSES = ["pending", "accepted", "rejected"];
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
+// Mỗi máy cài VidSaver là một dòng: mã cài đặt ngẫu nhiên, lần đầu / lần gần nhất mở app, số ngày đã dùng.
+// internal = máy đã đăng nhập Quản trị (máy của người làm app), không tính vào thống kê.
+const USERS_SHEET = "Người dùng";
+const USER_HEADERS = ["installId", "firstSeen", "lastSeen", "appVersion", "os", "days", "internal"];
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 function setup() {
   const sheet = getSheet_();
-  if (sheet.getLastRow() === 0) sheet.appendRow(HEADERS);
-  sheet.setFrozenRows(1);
+  getSheet_(USERS_SHEET, USER_HEADERS);
   const statusColumn = HEADERS.indexOf("status") + 1;
   const rule = SpreadsheetApp.newDataValidation().requireValueInList(STATUSES, true).build();
   sheet.getRange(2, statusColumn, sheet.getMaxRows() - 1, 1).setDataValidation(rule);
@@ -34,7 +39,7 @@ function setup() {
 function doPost(e) {
   try {
     const req = JSON.parse(e.postData.contents);
-    const handlers = { submit: submit_, status: status_, list: list_, image: image_, review: review_ };
+    const handlers = { submit: submit_, status: status_, list: list_, image: image_, review: review_, ping: ping_, stats: stats_ };
     const handler = handlers[req.action];
     if (!handler) throw new Error("Yêu cầu không hợp lệ.");
     return json_({ ok: true, data: handler(req) });
@@ -128,6 +133,58 @@ function review_(req) {
   });
 }
 
+/** App báo về mỗi ngày một lần khi được mở. Máy nào gửi kèm đúng mã quản trị thì đánh dấu là máy nội bộ. */
+function ping_(req) {
+  const id = String(req.installId || "");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("Mã cài đặt không hợp lệ.");
+  const internal = !!req.adminKey && req.adminKey === PropertiesService.getScriptProperties().getProperty("ADMIN_KEY");
+  const version = text_(req.appVersion, 30);
+  const os = text_(req.os, 80);
+  const now = new Date();
+  withLock_(function () {
+    const sheet = getSheet_(USERS_SHEET, USER_HEADERS);
+    const found = sheet.getRange("A:A").createTextFinder(id).matchEntireCell(true).findNext();
+    if (!found) {
+      sheet.appendRow([id, now, now, version, os, 1, internal]);
+      return;
+    }
+    const row = found.getRow();
+    const old = sheet.getRange(row, 1, 1, USER_HEADERS.length).getValues()[0];
+    // Đã từng là máy nội bộ thì giữ nguyên, kể cả khi sau đó thoát Quản trị.
+    sheet.getRange(row, 3, 1, 5).setValues([[now, version, os, (Number(old[5]) || 0) + 1, internal || old[6] === true]]);
+  });
+  return {};
+}
+
+/** Quản trị: số máy đang dùng, chỉ tính máy thật (bỏ máy nội bộ). */
+function stats_(req) {
+  checkAdmin_(req);
+  const sheet = getSheet_(USERS_SHEET, USER_HEADERS);
+  const rows = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, USER_HEADERS.length).getValues();
+  const now = Date.now();
+  const out = { total: 0, day: 0, week: 0, month: 0, newWeek: 0, internal: 0, versions: {}, systems: {} };
+  rows.forEach(function (r) {
+    if (!r[0]) return;
+    if (r[6] === true) {
+      out.internal++;
+      return;
+    }
+    const idle = now - new Date(r[2]).getTime();
+    out.total++;
+    if (idle < DAY_MS) out.day++;
+    if (idle < 7 * DAY_MS) out.week++;
+    if (now - new Date(r[1]).getTime() < 7 * DAY_MS) out.newWeek++;
+    if (idle < 30 * DAY_MS) {
+      out.month++;
+      const version = String(r[3]);
+      const system = String(r[4]).split(" ")[0];
+      out.versions[version] = (out.versions[version] || 0) + 1;
+      out.systems[system] = (out.systems[system] || 0) + 1;
+    }
+  });
+  return out;
+}
+
 function rows_() {
   const sheet = getSheet_();
   if (sheet.getLastRow() < 2) return [];
@@ -159,9 +216,17 @@ function text_(value, max) {
   return /^[=+\-@]/.test(s) ? "'" + s : s;
 }
 
-function getSheet_() {
+/** Lấy (hoặc tạo) một trang, ghi dòng tiêu đề nếu trang còn trống. Mặc định là trang "Góp ý". */
+function getSheet_(name, headers) {
+  name = name || SHEET_NAME;
+  headers = headers || HEADERS;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  return ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
+  const sheet = ss.getSheetByName(name) || ss.insertSheet(name);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(headers);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
 }
 
 function prop_(key) {

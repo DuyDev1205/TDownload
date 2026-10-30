@@ -985,6 +985,31 @@ textarea:focus {
   gap: 6px;
 }
 
+.usage {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.usage-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.usage-tiles div {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.usage-tiles b {
+  font-size: 20px;
+}
+
 .admin-login {
   display: flex;
   gap: 8px;

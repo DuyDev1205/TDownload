@@ -35,6 +35,7 @@
   } from "./lib/format";
   import { load, save } from "./lib/storage";
   import { getTheme, setTheme, THEME_MODES } from "./lib/theme";
+  import { startUsageReport } from "./lib/usage";
   import Logo from "./lib/Logo.svelte";
   import FeedbackTab from "./lib/FeedbackTab.svelte";
 
@@ -214,6 +215,7 @@
     getVersion().then((v) => (appVersion = v));
     checkAppUpdate(true);
     checkMissingFiles();
+    const stopUsageReport = startUsageReport();
 
     (async () => {
       if (!outDir) outDir = await downloadDir();
@@ -228,6 +230,7 @@
       window.removeEventListener("focus", autoPaste);
       window.removeEventListener("focus", maybeCheckAppUpdate);
       clearInterval(updateTimer);
+      stopUsageReport();
     };
   });
 
@@ -364,17 +367,26 @@
     const found = extractUrl(url) ?? url.trim();
     if (!found || fetching) return;
     const target = normalizeUrl(found);
+    // Link video YouTube mở từ trong playlist (watch?v=...&list=...): hiện cả danh sách để chọn.
+    const wholeList = /youtube\.com\/watch\?.*[?&]list=|youtu\.be\/.*[?&]list=/i.test(target);
     url = target;
     fetching = true;
     resetPreview();
     try {
-      const result = await api.fetchInfo(target, cookies);
+      const result = await api.fetchInfo(target, cookies, wholeList);
       if (result.kind === "playlist") {
         playlist = result;
         picked = result.entries.map(() => true);
       } else {
         info = result;
         customTitle = result.title;
+        // yt-dlp không mở được playlist (thường do để Riêng tư) thì lặng lẽ trả về một video.
+        if (wholeList) {
+          fetchError =
+            "Chỉ lấy được video này: không đọc được danh sách của playlist, thường do playlist đang để Riêng tư. Nếu là " +
+            "playlist của bạn, đổi sang Không công khai hoặc Công khai; hoặc vào Cài đặt → Cookie đăng nhập, chọn trình " +
+            "duyệt đã đăng nhập YouTube.";
+        }
       }
     } catch (e) {
       fetchError = String(e);
