@@ -9,10 +9,20 @@ import { load, save } from "./storage";
 
 const CHECK_EVERY = 60 * 60 * 1000;
 
+/** UUID v4. crypto.randomUUID chỉ có ở "secure context", WebView trên macOS có thể không có. */
+function uuid(): string {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 function installId(): string {
   let id = load("installId", "");
   if (!id) {
-    id = crypto.randomUUID();
+    id = uuid();
     save("installId", id);
   }
   return id;
@@ -29,27 +39,36 @@ export function systemInfo(): string {
 /** Thêm "v" để Google Sheet không hiểu "0.5.1" thành ngày tháng. */
 export const appVersionTag = () => getVersion().then((v) => `v${v}`).catch(() => "");
 
-/** Báo về nếu hôm nay chưa báo. `force`: báo ngay (vd. vừa đăng nhập Quản trị). */
+let sending = false;
+
+/**
+ * Báo về nếu hôm nay chưa báo, hoặc app vừa lên phiên bản mới (máy chủ tính đó là một lượt tải).
+ * `force`: báo ngay (vd. vừa đăng nhập Quản trị).
+ */
 export async function reportUsage(force = false) {
-  if (import.meta.env.DEV || !FEEDBACK_URL) return;
-  const today = new Date().toDateString();
-  if (!force && load("lastPing", "") === today) return;
+  if (import.meta.env.DEV || !FEEDBACK_URL || sending) return;
+  sending = true;
   try {
-    await ping({
-      installId: installId(),
-      appVersion: await appVersionTag(),
-      os: systemInfo(),
-      adminKey: load("feedbackAdminKey", ""),
-    });
-    save("lastPing", today);
+    const appVersion = await appVersionTag();
+    const mark = `${new Date().toDateString()} ${appVersion}`;
+    if (!force && load("lastPing", "") === mark) return;
+    await ping({ installId: installId(), appVersion, os: systemInfo(), adminKey: load("feedbackAdminKey", "") });
+    save("lastPing", mark);
   } catch {
     // Mất mạng thì lần kiểm tra sau báo lại.
+  } finally {
+    sending = false;
   }
 }
 
-/** Gọi khi app mở; app để mở qua ngày thì vẫn báo cho ngày mới. Trả về hàm dừng. */
+/** Gọi khi app mở; app để mở qua ngày thì vẫn báo cho ngày mới. Báo hỏng thì thử lại khi quay lại cửa sổ app. */
 export function startUsageReport(): () => void {
-  reportUsage();
-  const timer = setInterval(reportUsage, CHECK_EVERY);
-  return () => clearInterval(timer);
+  const report = () => reportUsage();
+  report();
+  const timer = setInterval(report, CHECK_EVERY);
+  window.addEventListener("focus", report);
+  return () => {
+    clearInterval(timer);
+    window.removeEventListener("focus", report);
+  };
 }

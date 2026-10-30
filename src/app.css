@@ -993,7 +993,7 @@ textarea:focus {
 
 .usage-tiles {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   margin-bottom: 6px;
 }
@@ -1018,6 +1018,11 @@ textarea:focus {
 .admin-login input {
   flex: 1;
   min-width: 0;
+}
+
+/* Che mã như ô mật khẩu mà trình quản lý mật khẩu không nhận ra để lưu. */
+.secret {
+  -webkit-text-security: disc;
 }
 
 .review-actions {

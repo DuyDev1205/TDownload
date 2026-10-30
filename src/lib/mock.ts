@@ -85,6 +85,7 @@ function fakeFeedback(req: Record<string, any>) {
       admin();
       return {
         total: 57,
+        downloads: 112,
         day: 9,
         week: 23,
         month: 41,

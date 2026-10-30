@@ -79,6 +79,8 @@ export const adminReview = (adminKey: string, id: string, status: FeedbackStatus
 /** Thống kê người dùng thật (không tính máy nội bộ đã đăng nhập Quản trị). */
 export interface UsageStats {
   total: number;
+  /** Lượt tải: mỗi máy 1 lần cài đầu tiên, cộng 1 mỗi lần lên phiên bản mới (kể cả tự cập nhật). */
+  downloads: number;
   day: number;
   week: number;
   month: number;

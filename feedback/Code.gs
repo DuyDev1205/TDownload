@@ -19,8 +19,9 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 // Mỗi máy cài VidSaver là một dòng: mã cài đặt ngẫu nhiên, lần đầu / lần gần nhất mở app, số ngày đã dùng.
 // internal = máy đã đăng nhập Quản trị (máy của người làm app), không tính vào thống kê.
+// installs = số lượt tải của máy đó: 1 lần cài đầu tiên, cộng 1 mỗi lần lên phiên bản mới (kể cả tự cập nhật).
 const USERS_SHEET = "Người dùng";
-const USER_HEADERS = ["installId", "firstSeen", "lastSeen", "appVersion", "os", "days", "internal"];
+const USER_HEADERS = ["installId", "firstSeen", "lastSeen", "appVersion", "os", "days", "internal", "installs"];
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function setup() {
@@ -145,13 +146,24 @@ function ping_(req) {
     const sheet = getSheet_(USERS_SHEET, USER_HEADERS);
     const found = sheet.getRange("A:A").createTextFinder(id).matchEntireCell(true).findNext();
     if (!found) {
-      sheet.appendRow([id, now, now, version, os, 1, internal]);
+      sheet.appendRow([id, now, now, version, os, 1, internal, 1]);
       return;
     }
     const row = found.getRow();
     const old = sheet.getRange(row, 1, 1, USER_HEADERS.length).getValues()[0];
-    // Đã từng là máy nội bộ thì giữ nguyên, kể cả khi sau đó thoát Quản trị.
-    sheet.getRange(row, 3, 1, 5).setValues([[now, version, os, (Number(old[5]) || 0) + 1, internal || old[6] === true]]);
+    const newDay = new Date(old[2]).toDateString() !== now.toDateString();
+    const updated = String(old[3]) !== version;
+    sheet.getRange(row, 3, 1, 6).setValues([
+      [
+        now,
+        version,
+        os,
+        (Number(old[5]) || 0) + (newDay ? 1 : 0),
+        // Đã từng là máy nội bộ thì giữ nguyên, kể cả khi sau đó thoát Quản trị.
+        internal || old[6] === true,
+        (Number(old[7]) || 1) + (updated ? 1 : 0),
+      ],
+    ]);
   });
   return {};
 }
@@ -162,7 +174,7 @@ function stats_(req) {
   const sheet = getSheet_(USERS_SHEET, USER_HEADERS);
   const rows = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, USER_HEADERS.length).getValues();
   const now = Date.now();
-  const out = { total: 0, day: 0, week: 0, month: 0, newWeek: 0, internal: 0, versions: {}, systems: {} };
+  const out = { total: 0, downloads: 0, day: 0, week: 0, month: 0, newWeek: 0, internal: 0, versions: {}, systems: {} };
   rows.forEach(function (r) {
     if (!r[0]) return;
     if (r[6] === true) {
@@ -171,6 +183,7 @@ function stats_(req) {
     }
     const idle = now - new Date(r[2]).getTime();
     out.total++;
+    out.downloads += Number(r[7]) || 1;
     if (idle < DAY_MS) out.day++;
     if (idle < 7 * DAY_MS) out.week++;
     if (now - new Date(r[1]).getTime() < 7 * DAY_MS) out.newWeek++;
@@ -225,6 +238,9 @@ function getSheet_(name, headers) {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
+  } else if (sheet.getRange(1, headers.length).getValue() !== headers[headers.length - 1]) {
+    // Code mới thêm cột: ghi lại dòng tiêu đề cho đủ.
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   return sheet;
 }

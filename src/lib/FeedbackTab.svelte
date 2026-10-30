@@ -133,6 +133,8 @@
     sending = true;
     sendError = "";
     sentNote = "";
+    // Phòng trình duyệt tự điền mã quản trị vào ô Liên hệ: không bao giờ gửi mã lên Sheet.
+    if (adminKey && contact.includes(adminKey)) contact = "";
     save("feedbackContact", contact);
     try {
       const { id } = await fb.submitFeedback({
@@ -232,7 +234,7 @@
       {/each}
     </div>
 
-    <input bind:value={title} maxlength="200" placeholder={type === "bug" ? "Tóm tắt lỗi, ví dụ: Không tải được video TikTok" : "Tên tính năng bạn muốn có"} />
+    <input bind:value={title} maxlength="200" autocomplete="off" placeholder={type === "bug" ? "Tóm tắt lỗi, ví dụ: Không tải được video TikTok" : "Tên tính năng bạn muốn có"} />
     <textarea bind:value={description} maxlength="5000" rows="6" placeholder={PLACEHOLDER[type]}></textarea>
 
     <div class="shots">
@@ -258,7 +260,7 @@
       />
     </div>
 
-    <input bind:value={contact} maxlength="200" placeholder="Liên hệ của bạn" />
+    <input bind:value={contact} maxlength="200" autocomplete="off" placeholder="Liên hệ của bạn" />
 
     {#if sendError}<p class="error">{sendError}</p>{/if}
     {#if sentNote}<p class="ok-note">{sentNote}</p>{/if}
@@ -290,7 +292,7 @@
       {#if stats}
         <div class="card usage">
           <div class="usage-tiles">
-            {#each [[stats.day, "24 giờ qua"], [stats.week, "7 ngày qua"], [stats.month, "30 ngày qua"], [stats.total, "Tổng số máy"]] as [n, label] (label)}
+            {#each [[stats.day, "24 giờ qua"], [stats.week, "7 ngày qua"], [stats.month, "30 ngày qua"], [stats.total, "Tổng số máy"], [stats.downloads, "Lượt tải"]] as [n, label] (label)}
               <div><b>{n}</b><small class="muted">{label}</small></div>
             {/each}
           </div>
@@ -298,8 +300,8 @@
           <small class="muted">Phiên bản (30 ngày): {breakdown(stats.versions)}</small>
           <small class="muted">Hệ điều hành (30 ngày): {breakdown(stats.systems)}</small>
           <small class="muted">
-            Chỉ tính máy đã cài và mở app, mỗi máy một lần dù mở bao nhiêu lần. Không tính {stats.internal} máy nội bộ (đã
-            đăng nhập Quản trị).
+            Chỉ tính máy đã cài và mở app, mỗi máy một lần dù mở bao nhiêu lần. Lượt tải = lần cài đầu + mỗi lần lên phiên
+            bản mới (kể cả tự cập nhật). Không tính {stats.internal} máy nội bộ (đã đăng nhập Quản trị).
           </small>
         </div>
       {:else if statsError}
@@ -373,7 +375,14 @@
           loadAdmin(keyDraft.trim());
         }}
       >
-        <input bind:value={keyDraft} type="password" placeholder="Mã quản trị (lấy khi chạy hàm setup trong Apps Script)" />
+        <!-- Không dùng type="password": trình quản lý mật khẩu của WebView sẽ lưu mã rồi tự điền vào ô khác. -->
+        <input
+          bind:value={keyDraft}
+          class="secret"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Mã quản trị (lấy khi chạy hàm setup trong Apps Script)"
+        />
         <button type="submit" class="primary" disabled={adminLoading || !keyDraft.trim()}>{adminLoading ? "Đang kiểm tra…" : "Vào"}</button>
       </form>
       {#if adminError}<p class="error">{adminError}</p>{/if}
