@@ -34,6 +34,7 @@
     subtitleName,
   } from "./lib/format";
   import { load, save } from "./lib/storage";
+  import { getTheme, setTheme, THEME_MODES } from "./lib/theme";
   import Logo from "./lib/Logo.svelte";
   import FeedbackTab from "./lib/FeedbackTab.svelte";
 
@@ -159,6 +160,13 @@
   let tab = $state<"download" | "feedback">("download");
   let feedbackUnseen = $state(0);
   let showSettings = $state(false);
+  let themeMode = $state(getTheme());
+
+  /** Nút giao diện cạnh Cài đặt: chuyển qua lại giữa Sáng và Tối. */
+  function toggleTheme() {
+    themeMode = themeMode === "dark" ? "light" : "dark";
+    setTheme(themeMode);
+  }
   let updating = $state(false);
   let updateMsg = $state("");
   let items = $state<Item[]>(loadHistory());
@@ -713,14 +721,31 @@
         <p>YouTube · TikTok · Facebook · SoundCloud</p>
       </div>
     </div>
-    <button class="ghost" class:active={showSettings} onclick={() => (showSettings = !showSettings)}>
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path
-          d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-2.1.1-1.4-.1-1.4 2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-2.4-1.4L14.2 2h-4.4l-.4 2.6A7.5 7.5 0 0 0 7 6L4.6 5 2.6 8.4l2 1.6-.1 1.4.1 1.4-2 1.6 2 3.4 2.4-1a7.5 7.5 0 0 0 2.4 1.4l.4 2.6h4.4l.4-2.6a7.5 7.5 0 0 0 2.4-1.4l2.4 1 2-3.4-2-1.6Z"
-        />
-      </svg>
-      Cài đặt
-    </button>
+    <div class="header-actions">
+      <button
+        class="ghost icon"
+        onclick={toggleTheme}
+        title={themeMode === "dark" ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối"}
+        aria-label="Đổi giao diện"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          {#if themeMode === "dark"}
+            <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" />
+          {:else}
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+          {/if}
+        </svg>
+      </button>
+      <button class="ghost" class:active={showSettings} onclick={() => (showSettings = !showSettings)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-2.1.1-1.4-.1-1.4 2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-2.4-1.4L14.2 2h-4.4l-.4 2.6A7.5 7.5 0 0 0 7 6L4.6 5 2.6 8.4l2 1.6-.1 1.4.1 1.4-2 1.6 2 3.4 2.4-1a7.5 7.5 0 0 0 2.4 1.4l.4 2.6h4.4l.4-2.6a7.5 7.5 0 0 0 2.4-1.4l2.4 1 2-3.4-2-1.6Z"
+          />
+        </svg>
+        Cài đặt
+      </button>
+    </div>
   </header>
 
   {#if appUpdate}
@@ -752,6 +777,15 @@
 
   {#if showSettings}
     <section class="card settings">
+      <div class="row">
+        <div class="label">Giao diện</div>
+        <select bind:value={themeMode} onchange={() => setTheme(themeMode)}>
+          {#each THEME_MODES as [value, label] (value)}
+            <option {value}>{label}</option>
+          {/each}
+        </select>
+      </div>
+
       <div class="row">
         <div class="label">Thư mục lưu</div>
         <div class="value path" title={outDir}>{outDir || "Chưa chọn"}</div>

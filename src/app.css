@@ -17,20 +17,19 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #12131a;
-    --card: #1b1d27;
-    --text: #eceef6;
-    --muted: #9a9eb3;
-    --line: #2c2f3d;
-    --field: #232634;
-    --accent: #8a7dff;
-    --accent-soft: #2a2650;
-    --tt: #e8e8e8;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
-    color-scheme: dark;
-  }
+/* data-theme do lib/theme.ts đặt theo lựa chọn Sáng / Tối / Theo hệ thống. */
+:root[data-theme="dark"] {
+  --bg: #12131a;
+  --card: #1b1d27;
+  --text: #eceef6;
+  --muted: #9a9eb3;
+  --line: #2c2f3d;
+  --field: #232634;
+  --accent: #8a7dff;
+  --accent-soft: #2a2650;
+  --tt: #e8e8e8;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  color-scheme: dark;
 }
 
 * {
@@ -143,6 +142,12 @@ button.big {
 button.ghost {
   background: transparent;
   border-color: transparent;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 button.ghost.active,
