@@ -299,6 +299,28 @@
           <small class="muted">Máy mới trong 7 ngày: {stats.newWeek}</small>
           <small class="muted">Phiên bản (30 ngày): {breakdown(stats.versions)}</small>
           <small class="muted">Hệ điều hành (30 ngày): {breakdown(stats.systems)}</small>
+          {#if stats.machines?.length}
+            <details class="machines">
+              <summary>Danh sách máy ({stats.machines.length})</summary>
+              <table>
+                <thead>
+                  <tr><th>Tên</th><th>Phiên bản</th><th>Hệ điều hành</th><th>Lượt tải</th><th>Dùng lần đầu</th><th>Gần nhất</th></tr>
+                </thead>
+                <tbody>
+                  {#each stats.machines as m, i (i)}
+                    <tr>
+                      <td>{m.name || "(chưa điền tên)"}</td>
+                      <td>{m.appVersion}</td>
+                      <td>{m.os.split(" ")[0]}</td>
+                      <td>{m.installs}</td>
+                      <td>{fmtDate(m.firstSeen)}</td>
+                      <td>{fmtDate(m.lastSeen)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </details>
+          {/if}
           <small class="muted">
             Chỉ tính máy đã cài và mở app, mỗi máy một lần dù mở bao nhiêu lần. Lượt tải = lần cài đầu + mỗi lần lên phiên
             bản mới (kể cả tự cập nhật). Không tính {stats.internal} máy nội bộ (đã đăng nhập Quản trị).

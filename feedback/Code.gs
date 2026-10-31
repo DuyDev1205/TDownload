@@ -20,8 +20,10 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 // Mỗi máy cài VidSaver là một dòng: mã cài đặt ngẫu nhiên, lần đầu / lần gần nhất mở app, số ngày đã dùng.
 // internal = máy đã đăng nhập Quản trị (máy của người làm app), không tính vào thống kê.
 // installs = số lượt tải của máy đó: 1 lần cài đầu tiên, cộng 1 mỗi lần lên phiên bản mới (kể cả tự cập nhật).
+// name = tên người dùng tự điền trong app (không bắt buộc).
 const USERS_SHEET = "Người dùng";
-const USER_HEADERS = ["installId", "firstSeen", "lastSeen", "appVersion", "os", "days", "internal", "installs"];
+const USER_HEADERS = ["installId", "firstSeen", "lastSeen", "appVersion", "os", "days", "internal", "installs", "name"];
+const MAX_MACHINES = 300;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function setup() {
@@ -141,19 +143,20 @@ function ping_(req) {
   const internal = !!req.adminKey && req.adminKey === PropertiesService.getScriptProperties().getProperty("ADMIN_KEY");
   const version = text_(req.appVersion, 30);
   const os = text_(req.os, 80);
+  const name = text_(req.name, 80);
   const now = new Date();
   withLock_(function () {
     const sheet = getSheet_(USERS_SHEET, USER_HEADERS);
     const found = sheet.getRange("A:A").createTextFinder(id).matchEntireCell(true).findNext();
     if (!found) {
-      sheet.appendRow([id, now, now, version, os, 1, internal, 1]);
+      sheet.appendRow([id, now, now, version, os, 1, internal, 1, name]);
       return;
     }
     const row = found.getRow();
     const old = sheet.getRange(row, 1, 1, USER_HEADERS.length).getValues()[0];
     const newDay = new Date(old[2]).toDateString() !== now.toDateString();
     const updated = String(old[3]) !== version;
-    sheet.getRange(row, 3, 1, 6).setValues([
+    sheet.getRange(row, 3, 1, 7).setValues([
       [
         now,
         version,
@@ -162,6 +165,7 @@ function ping_(req) {
         // Đã từng là máy nội bộ thì giữ nguyên, kể cả khi sau đó thoát Quản trị.
         internal || old[6] === true,
         (Number(old[7]) || 1) + (updated ? 1 : 0),
+        name,
       ],
     ]);
   });
@@ -174,7 +178,7 @@ function stats_(req) {
   const sheet = getSheet_(USERS_SHEET, USER_HEADERS);
   const rows = sheet.getLastRow() < 2 ? [] : sheet.getRange(2, 1, sheet.getLastRow() - 1, USER_HEADERS.length).getValues();
   const now = Date.now();
-  const out = { total: 0, downloads: 0, day: 0, week: 0, month: 0, newWeek: 0, internal: 0, versions: {}, systems: {} };
+  const out = { total: 0, downloads: 0, day: 0, week: 0, month: 0, newWeek: 0, internal: 0, versions: {}, systems: {}, machines: [] };
   rows.forEach(function (r) {
     if (!r[0]) return;
     if (r[6] === true) {
@@ -184,6 +188,14 @@ function stats_(req) {
     const idle = now - new Date(r[2]).getTime();
     out.total++;
     out.downloads += Number(r[7]) || 1;
+    out.machines.push({
+      name: String(r[8] || ""),
+      appVersion: String(r[3]),
+      os: String(r[4]),
+      firstSeen: new Date(r[1]).toISOString(),
+      lastSeen: new Date(r[2]).toISOString(),
+      installs: Number(r[7]) || 1,
+    });
     if (idle < DAY_MS) out.day++;
     if (idle < 7 * DAY_MS) out.week++;
     if (now - new Date(r[1]).getTime() < 7 * DAY_MS) out.newWeek++;
@@ -195,6 +207,11 @@ function stats_(req) {
       out.systems[system] = (out.systems[system] || 0) + 1;
     }
   });
+  // Mới dùng gần đây nhất trước.
+  out.machines.sort(function (a, b) {
+    return a.lastSeen < b.lastSeen ? 1 : -1;
+  });
+  out.machines = out.machines.slice(0, MAX_MACHINES);
   return out;
 }
 

@@ -35,7 +35,7 @@
   } from "./lib/format";
   import { load, save } from "./lib/storage";
   import { getTheme, setTheme, THEME_MODES } from "./lib/theme";
-  import { startUsageReport } from "./lib/usage";
+  import { getUserName, nameAsked, setUserName, skipUserName, startUsageReport } from "./lib/usage";
   import Logo from "./lib/Logo.svelte";
   import FeedbackTab from "./lib/FeedbackTab.svelte";
 
@@ -162,6 +162,17 @@
   let feedbackUnseen = $state(0);
   let showSettings = $state(false);
   let themeMode = $state(getTheme());
+
+  // Hỏi tên một lần (không bắt buộc) để tác giả biết ai đang dùng app.
+  let userName = $state(getUserName());
+  let nameDraft = $state(getUserName());
+  let askName = $state(!nameAsked());
+
+  function saveName() {
+    setUserName(nameDraft);
+    userName = nameDraft = getUserName();
+    askName = false;
+  }
 
   /** Nút giao diện cạnh Cài đặt: chuyển qua lại giữa Sáng và Tối. */
   function toggleTheme() {
@@ -760,31 +771,60 @@
     </div>
   </header>
 
+  <!-- Bắt buộc cập nhật: có bản mới thì chắn cả app cho tới khi cập nhật. Đang có video tải dở thì chỉ hiện thanh báo,
+       tải xong mới chắn. Không kiểm tra được (mất mạng) thì không chắn. -->
   {#if appUpdate}
-    <section class="card app-update">
-      <div class="text">
-        <b>Có phiên bản mới {appUpdate.version}</b>
-        <small>
+    <div class:update-gate={!busy}>
+      <section class="card app-update">
+        <div class="text">
+          <b>{busy ? `Có phiên bản mới ${appUpdate.version}` : `Cần cập nhật lên bản ${appUpdate.version} để tiếp tục`}</b>
+          <small>
+            {#if appUpdating}
+              Đang tải bản cập nhật{appUpdatePercent != null ? ` · ${appUpdatePercent.toFixed(0)}%` : "…"} App sẽ tự khởi động
+              lại.
+            {:else if busy}
+              Đang có video tải dở. Tải xong, app sẽ yêu cầu cập nhật trước khi dùng tiếp.
+            {:else}
+              Bạn đang dùng {appUpdate.currentVersion}. Cập nhật xong app sẽ tự khởi động lại.
+            {/if}
+          </small>
           {#if appUpdating}
-            Đang tải bản cập nhật{appUpdatePercent != null ? ` · ${appUpdatePercent.toFixed(0)}%` : "…"} App sẽ tự khởi động
-            lại.
-          {:else if busy}
-            Đang có video tải dở, cập nhật sau khi tải xong nhé.
-          {:else}
-            Bạn đang dùng {appUpdate.currentVersion}.
+            <div class="bar" class:indeterminate={appUpdatePercent == null}>
+              <div style:width="{appUpdatePercent ?? 0}%"></div>
+            </div>
           {/if}
-        </small>
-        {#if appUpdating}
-          <div class="bar" class:indeterminate={appUpdatePercent == null}>
-            <div style:width="{appUpdatePercent ?? 0}%"></div>
-          </div>
+          {#if appUpdateMsg}<p class="error">{appUpdateMsg}</p>{/if}
+        </div>
+        {#if !appUpdating}
+          <button class="primary" onclick={installAppUpdate} disabled={busy}>Cập nhật ngay</button>
         {/if}
-        {#if appUpdateMsg}<p class="error">{appUpdateMsg}</p>{/if}
+      </section>
+    </div>
+  {/if}
+
+  {#if askName}
+    <form
+      class="card ask-name"
+      onsubmit={(e) => {
+        e.preventDefault();
+        saveName();
+      }}
+    >
+      <div class="text">
+        <b>Bạn tên gì?</b>
+        <small>Không bắt buộc, đổi hoặc xoá được trong Cài đặt.</small>
       </div>
-      {#if !appUpdating}
-        <button class="primary" onclick={installAppUpdate} disabled={busy}>Cập nhật ngay</button>
-      {/if}
-    </section>
+      <input bind:value={nameDraft} maxlength="80" autocomplete="off" placeholder="Tên của bạn" />
+      <button type="submit" class="primary" disabled={!nameDraft.trim()}>Lưu</button>
+      <button
+        type="button"
+        class="ghost"
+        onclick={() => {
+          skipUserName();
+          askName = false;
+        }}>Bỏ qua</button
+      >
+    </form>
   {/if}
 
   {#if showSettings}
@@ -796,6 +836,12 @@
             <option {value}>{label}</option>
           {/each}
         </select>
+      </div>
+
+      <div class="row">
+        <div class="label">Tên của bạn</div>
+        <input class="value" bind:value={nameDraft} maxlength="80" autocomplete="off" placeholder="Không bắt buộc" />
+        <button onclick={saveName} disabled={nameDraft.trim() === userName}>Lưu</button>
       </div>
 
       <div class="row">

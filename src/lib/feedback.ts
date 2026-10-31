@@ -89,9 +89,11 @@ export interface UsageStats {
   /** Số máy dùng trong 30 ngày qua theo phiên bản / hệ điều hành. */
   versions: Record<string, number>;
   systems: Record<string, number>;
+  /** Các máy (không tính máy nội bộ), mới dùng gần đây nhất trước. */
+  machines: { name: string; appVersion: string; os: string; firstSeen: string; lastSeen: string; installs: number }[];
 }
 
-export const ping = (args: { installId: string; appVersion: string; os: string; adminKey: string }) =>
+export const ping = (args: { installId: string; appVersion: string; os: string; adminKey: string; name: string }) =>
   request<Record<string, never>>({ action: "ping", ...args });
 export const adminStats = (adminKey: string) => request<UsageStats>({ action: "stats", adminKey });
 

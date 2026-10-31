@@ -256,6 +256,43 @@ select:focus {
   background: var(--accent-soft);
 }
 
+/* Màn chắn bắt buộc cập nhật: phủ cả app, chỉ còn nút Cập nhật ngay. */
+.update-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgb(0 0 0 / 0.55);
+  backdrop-filter: blur(3px);
+}
+
+.update-gate .app-update {
+  width: 100%;
+  max-width: 520px;
+  background: var(--card);
+}
+
+.ask-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ask-name .text {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+}
+
+.ask-name input {
+  flex: 0 1 220px;
+  min-width: 0;
+}
+
 .app-update .text {
   flex: 1;
   min-width: 0;
@@ -1008,6 +1045,35 @@ textarea:focus {
 
 .usage-tiles b {
   font-size: 20px;
+}
+
+.machines summary {
+  cursor: pointer;
+  margin: 4px 0;
+}
+
+.machines table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.machines th,
+.machines td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.machines th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.machines td:first-child {
+  white-space: normal;
+  width: 100%;
 }
 
 .admin-login {

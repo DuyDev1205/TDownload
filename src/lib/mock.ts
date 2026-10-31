@@ -93,6 +93,10 @@ function fakeFeedback(req: Record<string, any>) {
         internal: 2,
         versions: { "v0.6.1": 30, "v0.6.0": 8, "v0.5.1": 3 },
         systems: { Windows: 33, macOS: 8 },
+        machines: [
+          { name: "Minh Anh", appVersion: "v0.6.4", os: "Windows (NT 10.0)", firstSeen: "2026-10-30T13:40:00Z", lastSeen: new Date().toISOString(), installs: 3 },
+          { name: "", appVersion: "v0.6.3", os: "macOS 10.15.7", firstSeen: "2026-10-30T20:40:00Z", lastSeen: "2026-10-30T20:41:00Z", installs: 1 },
+        ],
       };
     case "review": {
       admin();
