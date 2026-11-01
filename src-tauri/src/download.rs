@@ -10,6 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 
 use crate::deps::{self, err};
+use crate::i18n::{self, t};
 use crate::proxy;
 
 const OUTPUT_TEMPLATE: &str = "%(title).150B [%(id)s].%(ext)s";
@@ -189,7 +190,7 @@ pub async fn fetch_info(
         .arg(&url)
         .output()
         .await
-        .map_err(|e| format!("Không chạy được yt-dlp: {e}"))?;
+        .map_err(|e| t(i18n::RUN_YTDLP).replace("{e}", &e.to_string()))?;
     if !out.status.success() {
         return Err(friendly_error(&String::from_utf8_lossy(&out.stderr)));
     }
@@ -206,7 +207,7 @@ fn playlist_info(v: &Value) -> Result<PlaylistInfo, String> {
     let all = v["entries"].as_array().cloned().unwrap_or_default();
     // Link trang chủ kênh YouTube trả về các tab (Videos, Shorts) thay vì video.
     if !all.is_empty() && all.iter().all(|e| e["_type"] == "playlist") {
-        return Err("Đây là trang chủ của kênh. Mở tab Videos (link kết thúc bằng /videos) rồi copy lại link.".into());
+        return Err(t(i18n::CHANNEL_HOME).into());
     }
     let entries: Vec<PlaylistEntry> = all
         .iter()
@@ -226,11 +227,11 @@ fn playlist_info(v: &Value) -> Result<PlaylistInfo, String> {
         })
         .collect();
     if entries.is_empty() {
-        return Err("Danh sách này không có video nào tải được.".into());
+        return Err(t(i18n::EMPTY_PLAYLIST).into());
     }
     let text = |k: &str| v[k].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
     Ok(PlaylistInfo {
-        title: text("title").unwrap_or_else(|| "Danh sách phát".into()),
+        title: text("title").unwrap_or_else(|| t(i18n::PLAYLIST_TITLE).into()),
         uploader: text("uploader").or_else(|| text("channel")),
         site: text("extractor_key").unwrap_or_default(),
         count: v["playlist_count"].as_u64(),
@@ -292,7 +293,7 @@ fn video_info(v: &Value, url: String) -> VideoInfo {
     heights.dedup();
 
     VideoInfo {
-        title: text("title").unwrap_or_else(|| "Không có tiêu đề".into()),
+        title: text("title").unwrap_or_else(|| t(i18n::NO_TITLE).into()),
         thumbnail: text("thumbnail"),
         duration: v["duration"].as_f64(),
         uploader: text("uploader").or_else(|| text("channel")),
@@ -393,7 +394,7 @@ pub async fn start_download(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Không chạy được yt-dlp: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| t(i18n::RUN_YTDLP).replace("{e}", &e.to_string()))?;
     jobs.0.lock().unwrap().insert(id.clone(), Job { pid: child.id().unwrap_or(0), canceled: false });
 
     let state = Arc::new(Mutex::new(LineState::default()));
@@ -415,7 +416,7 @@ pub async fn start_download(
                 file: s.file.clone(),
                 error: (!success && !canceled).then(|| friendly_error(&s.log.join("\n"))),
                 note: (success && s.subtitle_failed)
-                    .then(|| "Không tải được phụ đề (trang tạm chặn, thử lại sau).".to_string()),
+                    .then(|| t(i18n::SUBTITLE_BLOCKED).to_string()),
             }
         };
         let _ = app.emit("dl-done", done);
@@ -542,7 +543,7 @@ fn friendly_error(log: &str) -> String {
         .rev()
         .find(|l| l.contains("ERROR"))
         .or_else(|| log.lines().rev().find(|l| !l.trim().is_empty()))
-        .unwrap_or("Lỗi không xác định")
+        .unwrap_or(t(i18n::UNKNOWN_ERROR))
         .trim()
         .to_string();
     let low = detail.to_lowercase();
@@ -552,20 +553,19 @@ fn friendly_error(log: &str) -> String {
         || (low.contains("cookie")
             && ["chrome", "edge", "brave", "decrypt", "could not copy"].iter().any(|k| low.contains(k)));
     let hint = if browser_cookie_error {
-        "Không đọc được cookie từ trình duyệt (Chrome/Edge bản mới khoá cookie lại). Video công khai thì vào Cài đặt → \
-         Cookie đăng nhập → Không dùng. Cần đăng nhập thì dùng Firefox hoặc file cookies.txt."
+        t(i18n::HINT_BROWSER_COOKIES)
     } else if ["login", "log in", "sign in", "cookies", "private", "registered users", "not a bot"].iter().any(|k| low.contains(k)) {
-        "Video cần đăng nhập hoặc là video riêng tư. Vào Cài đặt → Cookie đăng nhập, chọn trình duyệt bạn đã đăng nhập."
+        t(i18n::HINT_LOGIN)
     } else if ["resolving timed out", "could not resolve", "getaddrinfo", "timed out", "connection refused"].iter().any(|k| low.contains(k)) {
-        "Không kết nối được tới trang web. Kiểm tra mạng (hoặc VPN/proxy) rồi thử lại."
+        t(i18n::HINT_NETWORK)
     } else if low.contains("tiktok:user") || low.contains("secondary user id") {
-        "yt-dlp hiện chưa tải được cả trang cá nhân TikTok. Hãy copy link từng video (có thể dán nhiều link một lúc)."
+        t(i18n::HINT_TIKTOK_PROFILE)
     } else if low.contains("unsupported url") {
-        "Link này không được hỗ trợ."
+        t(i18n::HINT_UNSUPPORTED)
     } else if low.contains("ffmpeg") || low.contains("postprocessing") {
-        "Lỗi khi ghép/chuyển đổi file. Thử Cài đặt → Cài lại thành phần."
+        t(i18n::HINT_FFMPEG)
     } else if ["http error 403", "unable to extract", "unable to download", "no video formats"].iter().any(|k| low.contains(k)) {
-        "Trang web có thể vừa thay đổi. Thử Cài đặt → Cập nhật yt-dlp rồi tải lại."
+        t(i18n::HINT_SITE_CHANGED)
     } else {
         ""
     };

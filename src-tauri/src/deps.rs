@@ -10,6 +10,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::AsyncWriteExt;
 
+use crate::i18n::{self, t};
+
 #[cfg(windows)]
 pub const EXE: &str = ".exe";
 #[cfg(not(windows))]
@@ -229,14 +231,15 @@ async fn download_file(app: &AppHandle, client: &reqwest::Client, pkg: &Package,
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("Không tải được {}: {e}", pkg.name))?;
+        .map_err(|e| t(i18n::DOWNLOAD_FAILED).replace("{name}", pkg.name).replace("{e}", &e.to_string()))?;
     let total = resp.content_length();
 
     let mut file = tokio::fs::File::create(dest).await.map_err(err)?;
     let mut stream = resp.bytes_stream();
     let (mut done, mut last_emit) = (0u64, 0u64);
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Mất kết nối khi tải {}: {e}", pkg.name))?;
+        let chunk = chunk
+            .map_err(|e| t(i18n::CONNECTION_LOST).replace("{name}", pkg.name).replace("{e}", &e.to_string()))?;
         file.write_all(&chunk).await.map_err(err)?;
         done += chunk.len() as u64;
         if done - last_emit >= 512 * 1024 {
@@ -270,7 +273,7 @@ fn extract(zip_path: &Path, dir: &Path, wanted: &[&str]) -> Result<(), String> {
         found += 1;
     }
     if found < wanted.len() {
-        return Err(format!("Gói tải về thiếu file: {}", wanted.join(", ")));
+        return Err(t(i18n::MISSING_FILES).replace("{files}", &wanted.join(", ")));
     }
     Ok(())
 }

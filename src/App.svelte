@@ -21,8 +21,12 @@
   } from "./lib/api";
   import {
     SITE_NAME,
+    extractAllUrls,
     extractUrl,
     extractUrls,
+    thumbFallback,
+    uniqueLinks,
+    videoKey,
     fmtBytes,
     fmtDay,
     fmtDuration,
@@ -35,6 +39,7 @@
   } from "./lib/format";
   import { load, save } from "./lib/storage";
   import { getTheme, setTheme, THEME_MODES } from "./lib/theme";
+  import { getLang, LANGUAGES, localeTag, setLang, t, type Lang } from "./lib/i18n.svelte";
   import { getUserName, nameAsked, setUserName, skipUserName, startUsageReport } from "./lib/usage";
   import Logo from "./lib/Logo.svelte";
   import FeedbackTab from "./lib/FeedbackTab.svelte";
@@ -73,40 +78,24 @@
   const APP_UPDATE_EVERY = 30 * 60 * 1000;
   const isMac = navigator.userAgent.includes("Mac");
 
-  const MODES: { value: Mode; title: string; hint: string }[] = [
-    { value: "best", title: "Video", hint: "Giữ nguyên chất lượng gốc, đến 4K/8K nếu có" },
-    { value: "compat", title: "Video · Tương thích", hint: "H.264 ≤ 1080p, mở được trên mọi máy" },
-    { value: "audio", title: "Chỉ âm thanh", hint: "Gốc, MP3 hoặc lossless FLAC/WAV" },
-  ];
+  const MODES: Mode[] = ["best", "compat", "audio"];
+  const AUDIO_FORMATS: AudioFormat[] = ["original", "mp3", "flac", "wav"];
 
-  const AUDIO_FORMATS: { value: AudioFormat; label: string; hint: string }[] = [
-    {
-      value: "original",
-      label: "Gốc",
-      hint: "Giữ nguyên âm thanh của trang web, không nén lại: tốt nhất và nhẹ nhất. File .opus, .m4a hoặc .mp3 tuỳ nguồn.",
-    },
-    { value: "mp3", label: "MP3", hint: "Nén lại sang MP3 320 kbps, mở được ở mọi máy và mọi trình phát." },
-    {
-      value: "flac",
-      label: "FLAC",
-      hint: "Lossless: giữ trọn chất lượng bản gốc, không nén thêm lần nào. File nặng hơn, có ảnh bìa.",
-    },
-    {
-      value: "wav",
-      label: "WAV",
-      hint: "Lossless không nén, file rất nặng, hợp cho phần mềm dựng video/DJ. WAV không chứa được ảnh bìa.",
-    },
-  ];
+  /** Tên định dạng âm thanh: "Gốc" theo ngôn ngữ đang chọn, còn lại là MP3/FLAC/WAV. */
+  const audioLabel = (f: AudioFormat) => (f === "original" ? t("audio.original") : f.toUpperCase());
 
+  /** Tên trình duyệt giữ nguyên; "" và "file" đổi theo ngôn ngữ. */
   const COOKIE_SOURCES: [string, string][] = [
-    ["", "Không dùng"],
+    ["", ""],
     ["firefox", "Firefox"],
     ["chrome", "Chrome"],
     ["edge", "Edge"],
     ["brave", "Brave"],
     ...(isMac ? ([["safari", "Safari"]] as [string, string][]) : []),
-    ["file", "File cookies.txt"],
+    ["file", ""],
   ];
+  const cookieLabel = (value: string, label: string) =>
+    value === "" ? t("settings.cookiesNone") : value === "file" ? t("settings.cookiesFile") : label;
 
   let deps = $state<DepsStatus | null>(null);
   let installing = $state(false);
@@ -116,6 +105,8 @@
   let url = $state("");
   let fetching = $state(false);
   let fetchError = $state("");
+  /** Thông báo nhẹ (không phải lỗi), ví dụ đã bỏ link trùng hoặc video đã tải rồi. */
+  let notice = $state("");
   let info = $state<VideoInfo | null>(null);
   let customTitle = $state("");
   /** Vị trí phụ đề đã chọn trong info.subtitles; -1 là không tải phụ đề. */
@@ -141,7 +132,7 @@
   const savedMode = load("mode", "best");
   let mode = $state<Mode>(savedMode === "mp3" ? "audio" : (savedMode as Mode));
   let audioFormat = $state<AudioFormat>(load("audioFormat", savedMode === "mp3" ? "mp3" : "original") as AudioFormat);
-  const audioHint = $derived(AUDIO_FORMATS.find((f) => f.value === audioFormat)?.hint ?? "");
+  const audioHint = $derived(t(`audio.${audioFormat}.hint`));
   const effectiveMode = $derived<Mode>(audioOnly ? "audio" : mode);
   /** Độ phân giải tối đa muốn tải; null là lấy cao nhất có thể. */
   let quality = $state<number | null>(null);
@@ -162,6 +153,7 @@
   let feedbackUnseen = $state(0);
   let showSettings = $state(false);
   let themeMode = $state(getTheme());
+  let lang = $state<Lang>(getLang());
 
   // Hỏi tên một lần (không bắt buộc) để tác giả biết ai đang dùng app.
   let userName = $state(getUserName());
@@ -275,7 +267,7 @@
       save("lastUpdate", String(Date.now()));
       await refreshDeps();
     } catch (e) {
-      updateMsg = `Lỗi: ${e}`;
+      updateMsg = t("common.error", { e: String(e) });
     } finally {
       updating = false;
     }
@@ -287,10 +279,10 @@
     appUpdateMsg = "";
     try {
       appUpdate = await check();
-      if (!appUpdate && !quiet) appUpdateMsg = "Bạn đang dùng bản mới nhất.";
+      if (!appUpdate && !quiet) appUpdateMsg = t("update.latest");
     } catch (e) {
       lastAppCheck = 0; // Lỗi mạng thì lần quay lại app sau thử lại ngay.
-      if (!quiet) appUpdateMsg = `Không kiểm tra được bản mới: ${e}`;
+      if (!quiet) appUpdateMsg = t("update.checkFailed", { e: String(e) });
     }
   }
 
@@ -317,7 +309,7 @@
       });
       await relaunch();
     } catch (e) {
-      appUpdateMsg = `Cập nhật lỗi: ${e}`;
+      appUpdateMsg = t("update.failed", { e: String(e) });
       appUpdating = false;
     }
   }
@@ -353,6 +345,7 @@
     playlist = null;
     picked = [];
     fetchError = "";
+    notice = "";
     customTitle = "";
     subtitleIndex = -1;
     quality = null;
@@ -380,9 +373,12 @@
     const target = normalizeUrl(found);
     // Link video YouTube mở từ trong playlist (watch?v=...&list=...): hiện cả danh sách để chọn.
     const wholeList = /youtube\.com\/watch\?.*[?&]list=|youtu\.be\/.*[?&]list=/i.test(target);
+    // Cùng một video dán hai lần (vd. dính liền nhau) thì chỉ lấy một và báo cho người dùng.
+    const dupes = uniqueLinks(extractAllUrls(url)).dupes;
     url = target;
     fetching = true;
     resetPreview();
+    if (dupes) notice = t("dup.links", { n: dupes });
     try {
       const result = await api.fetchInfo(target, cookies, wholeList);
       if (result.kind === "playlist") {
@@ -393,10 +389,7 @@
         customTitle = result.title;
         // yt-dlp không mở được playlist (thường do để Riêng tư) thì lặng lẽ trả về một video.
         if (wholeList) {
-          fetchError =
-            "Chỉ lấy được video này: không đọc được danh sách của playlist, thường do playlist đang để Riêng tư. Nếu là " +
-            "playlist của bạn, đổi sang Không công khai hoặc Công khai; hoặc vào Cài đặt → Cookie đăng nhập, chọn trình " +
-            "duyệt đã đăng nhập YouTube.";
+          fetchError = t("fetch.privatePlaylist");
         }
       }
     } catch (e) {
@@ -415,13 +408,19 @@
     if (!info) return;
     const typed = customTitle.trim();
     const title = typed && typed !== info.title ? typed : null;
-    addItem(
+    const added = addItem(
       { ...$state.snapshot(info), title: title ?? info.title },
       effectiveMode,
       chosenQuality,
       title,
       info.subtitles[subtitleIndex] ?? null,
     );
+    // Trùng thì giữ phần xem trước để người dùng chọn cách tải khác nếu muốn.
+    if (added !== "added") {
+      notice = t(added === "active" ? "dup.active" : "dup.done");
+      return;
+    }
+    notice = "";
     info = null;
     url = "";
     saveHistory();
@@ -432,6 +431,7 @@
   function enqueuePlaylist() {
     if (!playlist) return;
     const site = playlist.site.replace(/(Tab|Set|Playlist|User)$/i, "");
+    let skipped = 0;
     playlist.entries.forEach((e, i) => {
       if (!picked[i]) return;
       const vi: VideoInfo = {
@@ -445,10 +445,11 @@
         subtitles: [],
         url: e.url,
       };
-      addItem(vi, effectiveMode, null);
+      if (addItem(vi, effectiveMode, null) !== "added") skipped++;
     });
     url = "";
     resetPreview();
+    if (skipped) notice = t("dup.skipped", { n: skipped });
     saveHistory();
     pump();
   }
@@ -457,17 +458,19 @@
   async function addBatch() {
     if (fetching || batchRead != null) return;
     const links = urlList.map(normalizeUrl);
+    const dupes = uniqueLinks(extractAllUrls(url)).dupes;
     const failed: string[] = [];
+    let skipped = 0;
     resetPreview();
     batchRead = 0;
     for (const link of links) {
       try {
         const result = await api.fetchInfo(link, cookies);
         if (result.kind === "playlist") {
-          failed.push(`${link}\n  Đây là playlist/kênh: dán riêng link này để chọn video.`);
+          failed.push(`${link}\n  ${t("batch.isPlaylist")}`);
         } else {
           const m = result.heights.length ? mode : "audio";
-          addItem(result, m, m === "audio" ? null : bestQuality(result, m));
+          if (addItem(result, m, m === "audio" ? null : bestQuality(result, m)) !== "added") skipped++;
           saveHistory();
           pump();
         }
@@ -478,10 +481,37 @@
     }
     batchRead = null;
     url = failed.length ? failed.map((f) => f.split("\n")[0]).join(" ") : "";
-    fetchError = failed.length ? `${failed.length}/${links.length} link không lấy được:\n${failed.join("\n")}` : "";
+    fetchError = failed.length
+      ? `${t("batch.failed", { n: failed.length, total: links.length })}\n${failed.join("\n")}`
+      : "";
+    notice = [dupes && t("dup.links", { n: dupes }), skipped && t("dup.skipped", { n: skipped })].filter(Boolean).join(" ");
   }
 
-  function addItem(vi: VideoInfo, m: Mode, quality: number | null, title: string | null = null, subtitle: Subtitle | null = null) {
+  /**
+   * Thêm một lượt tải, trừ khi cùng video với cùng cách tải (chế độ, định dạng, chất lượng, phụ đề) đang tải ("active")
+   * hoặc đã tải xong mà file vẫn còn ("done"). Mục cũ bị lỗi, đã huỷ hoặc mất file thì thay bằng mục mới, không để trùng.
+   */
+  function addItem(
+    vi: VideoInfo,
+    m: Mode,
+    quality: number | null,
+    title: string | null = null,
+    subtitle: Subtitle | null = null,
+  ): "added" | "active" | "done" {
+    const key = videoKey(vi.url);
+    const af = m === "audio" ? audioFormat : null;
+    const q = m === "audio" ? null : quality;
+    const same = items.find(
+      (i) =>
+        videoKey(i.info.url) === key &&
+        i.mode === m &&
+        i.audioFormat === af &&
+        i.quality === q &&
+        (i.subtitle?.lang ?? null) === (subtitle?.lang ?? null),
+    );
+    if (same && ["queued", "downloading", "processing"].includes(same.status)) return "active";
+    if (same?.status === "done" && !same.missing) return "done";
+    if (same) items = items.filter((i) => i.id !== same.id);
     items.unshift({
       id: crypto.randomUUID(),
       info: vi,
@@ -502,6 +532,7 @@
       addedAt: Date.now(),
       doneAt: null,
     });
+    return "added";
   }
 
   /** Nạp lịch sử tải từ lần trước. Mục đang tải dở khi tắt app chuyển sang lỗi để có nút Thử lại. */
@@ -510,7 +541,7 @@
       const list = JSON.parse(load("history", "[]")) as Item[];
       return list.map((it) =>
         ["queued", "downloading", "processing"].includes(it.status)
-          ? { ...it, status: "error", percent: null, speed: null, eta: null, error: "Đã dừng vì app bị tắt. Bấm Thử lại để tải tiếp." }
+          ? { ...it, status: "error", percent: null, speed: null, eta: null, error: t("history.interrupted") }
           : it,
       );
     } catch {
@@ -640,42 +671,42 @@
 
   function stageLabel(pp: string | null): string {
     const name = (pp ?? "").toLowerCase();
-    if (name.includes("merger")) return "Đang ghép hình + tiếng…";
-    if (name.includes("extractaudio")) return "Đang tách âm thanh…";
-    if (name.includes("thumbnail")) return "Đang gắn ảnh bìa…";
-    if (name.includes("metadata")) return "Đang ghi thông tin…";
-    if (name.includes("remux") || name.includes("convertor")) return "Đang chuyển sang MP4…";
-    if (name.includes("movefiles")) return "Đang lưu file…";
-    return "Đang xử lý…";
+    if (name.includes("merger")) return t("stage.merge");
+    if (name.includes("extractaudio")) return t("stage.extractAudio");
+    if (name.includes("thumbnail")) return t("stage.thumbnail");
+    if (name.includes("metadata")) return t("stage.metadata");
+    if (name.includes("remux") || name.includes("convertor")) return t("stage.remux");
+    if (name.includes("movefiles")) return t("stage.move");
+    return t("stage.processing");
   }
 
   function statusText(it: Item): string {
     switch (it.status) {
       case "queued":
-        return "Đang chờ…";
+        return t("status.queued");
       case "downloading": {
-        const bits = [it.part > 1 ? `Phần ${it.part}` : "Đang tải"];
+        const bits = [it.part > 1 ? t("status.part", { n: it.part }) : t("status.downloading")];
         if (it.percent != null) bits.push(`${it.percent.toFixed(1)}%`);
         if (it.speed) bits.push(`${fmtBytes(it.speed)}/s`);
-        if (it.eta != null) bits.push(`còn ${fmtDuration(it.eta)}`);
+        if (it.eta != null) bits.push(t("status.eta", { t: fmtDuration(it.eta) }));
         return bits.join(" · ");
       }
       case "processing":
         return it.stage;
       case "done":
-        return "Hoàn tất";
+        return t("status.done");
       case "canceled":
-        return "Đã huỷ";
+        return t("status.canceled");
       case "error":
-        return it.error ?? "Lỗi không xác định";
+        return it.error ?? t("status.unknownError");
     }
   }
 
   function depsLine(name: string): string {
     const p = installProgress[name];
-    if (!p) return installing ? "Đang chờ…" : "";
-    if (p.stage === "done") return "Xong";
-    if (p.stage === "extract") return "Đang giải nén…";
+    if (!p) return installing ? t("setup.waiting") : "";
+    if (p.stage === "done") return t("setup.done");
+    if (p.stage === "extract") return t("setup.extracting");
     return p.total ? `${fmtBytes(p.downloaded)} / ${fmtBytes(p.total)}` : fmtBytes(p.downloaded);
   }
 
@@ -688,17 +719,16 @@
 
   /** Tên thẻ chế độ; chế độ Video ghi luôn độ phân giải cao nhất của video đang xem, ví dụ "Video · 8K". */
   function modeTitle(m: Mode): string {
-    const title = MODES.find((x) => x.value === m)?.title ?? m;
+    const title = t(`mode.${m}.title`);
     return m === "best" && info?.maxHeight ? `${title} · ${fmtQuality(info.maxHeight)}` : title;
   }
 
   /** Mô tả ngắn cách tải của một mục, ví dụ "Video · 720p", "Video · Tương thích · 1080p" hoặc "Chỉ âm thanh · FLAC". */
   function itemFormat(it: Item): string {
-    const title = MODES.find((x) => x.value === it.mode)?.title ?? it.mode;
-    const parts = [title];
-    if (it.audioFormat) parts.push(AUDIO_FORMATS.find((f) => f.value === it.audioFormat)?.label ?? "");
+    const parts = [t(`mode.${it.mode}.title`)];
+    if (it.audioFormat) parts.push(audioLabel(it.audioFormat));
     else if (it.quality) parts.push(fmtQuality(it.quality));
-    if (it.subtitle) parts.push(`Phụ đề ${subtitleName(it.subtitle)}`);
+    if (it.subtitle) parts.push(t("item.subtitle", { name: subtitleName(it.subtitle) }));
     return parts.join(" · ");
   }
 </script>
@@ -708,26 +738,26 @@
 {#snippet formatPicker(onlyAudio: boolean)}
   {@const current = onlyAudio ? "audio" : mode}
   <div class="modes" class:single={onlyAudio} role="radiogroup">
-    {#each MODES.filter((m) => !onlyAudio || m.value === "audio") as m (m.value)}
+    {#each MODES.filter((m) => !onlyAudio || m === "audio") as m (m)}
       <button
         role="radio"
-        aria-checked={current === m.value}
+        aria-checked={current === m}
         class="mode"
-        class:selected={current === m.value}
-        onclick={() => !onlyAudio && (mode = m.value)}
+        class:selected={current === m}
+        onclick={() => !onlyAudio && (mode = m)}
       >
-        <b>{modeTitle(m.value)}</b>
-        <small>{onlyAudio ? "Trang này chỉ có âm thanh" : m.hint}</small>
+        <b>{modeTitle(m)}</b>
+        <small>{onlyAudio ? t("picker.audioOnlySite") : t(`mode.${m}.hint`)}</small>
       </button>
     {/each}
   </div>
 
   {#if current === "audio"}
-    <div class="qualities" role="radiogroup" aria-label="Định dạng âm thanh">
-      <span class="label">Định dạng</span>
-      {#each AUDIO_FORMATS as f (f.value)}
-        <button role="radio" aria-checked={audioFormat === f.value} class:selected={audioFormat === f.value} onclick={() => (audioFormat = f.value)}>
-          {f.label}
+    <div class="qualities" role="radiogroup" aria-label={t("picker.audioFormat")}>
+      <span class="label">{t("picker.format")}</span>
+      {#each AUDIO_FORMATS as f (f)}
+        <button role="radio" aria-checked={audioFormat === f} class:selected={audioFormat === f} onclick={() => (audioFormat = f)}>
+          {audioLabel(f)}
         </button>
       {/each}
     </div>
@@ -748,8 +778,8 @@
       <button
         class="ghost icon"
         onclick={toggleTheme}
-        title={themeMode === "dark" ? "Chuyển sang giao diện sáng" : "Chuyển sang giao diện tối"}
-        aria-label="Đổi giao diện"
+        title={themeMode === "dark" ? t("theme.toLight") : t("theme.toDark")}
+        aria-label={t("theme.toggle")}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           {#if themeMode === "dark"}
@@ -766,7 +796,7 @@
             d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7.4-2.1.1-1.4-.1-1.4 2-1.6-2-3.4-2.4 1a7.5 7.5 0 0 0-2.4-1.4L14.2 2h-4.4l-.4 2.6A7.5 7.5 0 0 0 7 6L4.6 5 2.6 8.4l2 1.6-.1 1.4.1 1.4-2 1.6 2 3.4 2.4-1a7.5 7.5 0 0 0 2.4 1.4l.4 2.6h4.4l.4-2.6a7.5 7.5 0 0 0 2.4-1.4l2.4 1 2-3.4-2-1.6Z"
           />
         </svg>
-        Cài đặt
+        {t("header.settings")}
       </button>
     </div>
   </header>
@@ -777,15 +807,15 @@
     <div class:update-gate={!busy}>
       <section class="card app-update">
         <div class="text">
-          <b>{busy ? `Có phiên bản mới ${appUpdate.version}` : `Cần cập nhật lên bản ${appUpdate.version} để tiếp tục`}</b>
+          <b>{busy ? t("update.available", { v: appUpdate.version }) : t("update.required", { v: appUpdate.version })}</b>
           <small>
             {#if appUpdating}
-              Đang tải bản cập nhật{appUpdatePercent != null ? ` · ${appUpdatePercent.toFixed(0)}%` : "…"} App sẽ tự khởi động
-              lại.
+              {t("update.downloading")}{appUpdatePercent != null ? ` · ${appUpdatePercent.toFixed(0)}%` : "…"}
+              {t("update.restart")}
             {:else if busy}
-              Đang có video tải dở. Tải xong, app sẽ yêu cầu cập nhật trước khi dùng tiếp.
+              {t("update.busy")}
             {:else}
-              Bạn đang dùng {appUpdate.currentVersion}. Cập nhật xong app sẽ tự khởi động lại.
+              {t("update.current", { v: appUpdate.currentVersion })}
             {/if}
           </small>
           {#if appUpdating}
@@ -796,7 +826,7 @@
           {#if appUpdateMsg}<p class="error">{appUpdateMsg}</p>{/if}
         </div>
         {#if !appUpdating}
-          <button class="primary" onclick={installAppUpdate} disabled={busy}>Cập nhật ngay</button>
+          <button class="primary" onclick={installAppUpdate} disabled={busy}>{t("update.now")}</button>
         {/if}
       </section>
     </div>
@@ -811,18 +841,18 @@
       }}
     >
       <div class="text">
-        <b>Bạn tên gì?</b>
-        <small>Không bắt buộc, đổi hoặc xoá được trong Cài đặt.</small>
+        <b>{t("name.ask")}</b>
+        <small>{t("name.hint")}</small>
       </div>
-      <input bind:value={nameDraft} maxlength="80" autocomplete="off" placeholder="Tên của bạn" />
-      <button type="submit" class="primary" disabled={!nameDraft.trim()}>Lưu</button>
+      <input bind:value={nameDraft} maxlength="80" autocomplete="off" placeholder={t("name.placeholder")} />
+      <button type="submit" class="primary" disabled={!nameDraft.trim()}>{t("common.save")}</button>
       <button
         type="button"
         class="ghost"
         onclick={() => {
           skipUserName();
           askName = false;
-        }}>Bỏ qua</button
+        }}>{t("common.skip")}</button
       >
     </form>
   {/if}
@@ -830,56 +860,61 @@
   {#if showSettings}
     <section class="card settings">
       <div class="row">
-        <div class="label">Giao diện</div>
-        <select bind:value={themeMode} onchange={() => setTheme(themeMode)}>
-          {#each THEME_MODES as [value, label] (value)}
+        <div class="label">{t("settings.language")}</div>
+        <select bind:value={lang} onchange={() => setLang(lang)}>
+          {#each LANGUAGES as [value, label] (value)}
             <option {value}>{label}</option>
           {/each}
         </select>
       </div>
 
       <div class="row">
-        <div class="label">Tên của bạn</div>
-        <input class="value" bind:value={nameDraft} maxlength="80" autocomplete="off" placeholder="Không bắt buộc" />
-        <button onclick={saveName} disabled={nameDraft.trim() === userName}>Lưu</button>
+        <div class="label">{t("settings.theme")}</div>
+        <select bind:value={themeMode} onchange={() => setTheme(themeMode)}>
+          {#each THEME_MODES as value (value)}
+            <option {value}>{t(`theme.${value}`)}</option>
+          {/each}
+        </select>
       </div>
 
       <div class="row">
-        <div class="label">Thư mục lưu</div>
-        <div class="value path" title={outDir}>{outDir || "Chưa chọn"}</div>
-        <button onclick={chooseDir}>Đổi…</button>
+        <div class="label">{t("settings.name")}</div>
+        <input class="value" bind:value={nameDraft} maxlength="80" autocomplete="off" placeholder={t("settings.optional")} />
+        <button onclick={saveName} disabled={nameDraft.trim() === userName}>{t("common.save")}</button>
       </div>
 
       <div class="row">
-        <div class="label">Cookie đăng nhập</div>
+        <div class="label">{t("settings.folder")}</div>
+        <div class="value path" title={outDir}>{outDir || t("settings.notChosen")}</div>
+        <button onclick={chooseDir}>{t("settings.change")}</button>
+      </div>
+
+      <div class="row">
+        <div class="label">{t("settings.cookies")}</div>
         <select bind:value={cookieKind}>
           {#each COOKIE_SOURCES as [value, label] (value)}
-            <option {value}>{label}</option>
+            <option {value}>{cookieLabel(value, label)}</option>
           {/each}
         </select>
         {#if cookieKind === "file"}
-          <div class="value path" title={cookieFile}>{cookieFile || "Chưa chọn file"}</div>
-          <button onclick={chooseCookieFile}>Chọn…</button>
+          <div class="value path" title={cookieFile}>{cookieFile || t("settings.noFile")}</div>
+          <button onclick={chooseCookieFile}>{t("settings.choose")}</button>
         {/if}
       </div>
-      <p class="note">
-        Chỉ cần khi video riêng tư, trong nhóm kín, giới hạn tuổi, hoặc trang đòi đăng nhập. Đăng nhập trên trình
-        duyệt đó trước. Trên Windows, Chrome/Edge mã hoá cookie nên hay lỗi: dùng <b>Firefox</b> hoặc
-        <b>file cookies.txt</b> sẽ ổn định hơn.
-      </p>
+      <p class="note">{t("settings.cookiesNote")}</p>
 
       <div class="row">
         <div class="label">yt-dlp</div>
         <div class="value">{deps?.ytdlpVersion ?? "—"}</div>
-        <button onclick={updateNow} disabled={updating || installing}>{updating ? "Đang cập nhật…" : "Cập nhật"}</button>
-        <button onclick={() => install(true)} disabled={installing || updating}>Cài lại thành phần</button>
+        <button onclick={updateNow} disabled={updating || installing}>{updating ? t("settings.updating") : t("settings.update")}</button>
+        <button onclick={() => install(true)} disabled={installing || updating}>{t("settings.reinstall")}</button>
       </div>
       {#if updateMsg}<p class="note">{updateMsg}</p>{/if}
 
       <div class="row">
-        <div class="label">Phiên bản app</div>
+        <div class="label">{t("settings.appVersion")}</div>
         <div class="value">{appVersion || "—"}</div>
-        <button onclick={() => checkAppUpdate()} disabled={appUpdating}>Kiểm tra cập nhật</button>
+        <button onclick={() => checkAppUpdate()} disabled={appUpdating}>{t("settings.checkUpdate")}</button>
       </div>
       {#if appUpdateMsg && !appUpdate}<p class="note">{appUpdateMsg}</p>{/if}
     </section>
@@ -887,11 +922,8 @@
 
   {#if deps && !deps.ready}
     <section class="card setup">
-      <h2>Cài đặt lần đầu</h2>
-      <p>
-        App cần tải thêm các công cụ <b>yt-dlp</b>, <b>ffmpeg</b> và <b>deno</b> (khoảng 150–250 MB, chỉ một lần) để
-        tải và ghép video chất lượng cao.
-      </p>
+      <h2>{t("setup.title")}</h2>
+      <p>{t("setup.text")}</p>
       {#if installing || Object.keys(installProgress).length}
         <ul class="deps">
           {#each ["yt-dlp", "ffmpeg", ...(isMac ? ["ffprobe"] : []), "deno"] as name (name)}
@@ -905,17 +937,17 @@
       {/if}
       {#if installError}<p class="error">{installError}</p>{/if}
       <button class="primary" onclick={() => install()} disabled={installing}>
-        {installing ? "Đang cài đặt…" : installError ? "Thử lại" : "Cài đặt ngay"}
+        {installing ? t("setup.installing") : installError ? t("common.retry") : t("setup.install")}
       </button>
     </section>
   {:else if deps}
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected={tab === "download"} class:active={tab === "download"} onclick={() => (tab = "download")}>
-        Tải video
+        {t("tab.download")}
       </button>
       <button role="tab" aria-selected={tab === "feedback"} class:active={tab === "feedback"} onclick={() => (tab = "feedback")}>
-        Góp ý & báo lỗi
-        {#if feedbackUnseen}<span class="dot" title="Có phản hồi mới"></span>{/if}
+        {t("tab.feedback")}
+        {#if feedbackUnseen}<span class="dot" title={t("tab.newReply")}></span>{/if}
       </button>
     </div>
 
@@ -938,33 +970,30 @@
           <input
             bind:this={urlInput}
             bind:value={url}
-            placeholder="Dán link video, playlist, kênh… (dán nhiều link cùng lúc cũng được)"
+            placeholder={t("input.placeholder")}
             spellcheck="false"
             autocomplete="off"
           />
           {#if url && !fetching && batchRead == null}
-            <button type="button" class="clear" title="Xoá link" aria-label="Xoá link" onclick={clearUrl}>✕</button>
+            <button type="button" class="clear" title={t("input.clear")} aria-label={t("input.clear")} onclick={clearUrl}>✕</button>
           {/if}
         </div>
-        <button type="button" onclick={pasteNow} disabled={fetching || batchRead != null}>Dán</button>
+        <button type="button" onclick={pasteNow} disabled={fetching || batchRead != null}>{t("input.paste")}</button>
         <button type="submit" class="primary" disabled={fetching || batchRead != null || !url.trim() || (isBatch && !outDir)}>
           {#if batchRead != null}
-            Đang đọc {batchRead}/{urlList.length}…
+            {t("input.readingBatch", { n: batchRead, total: urlList.length })}
           {:else if fetching}
-            Đang đọc…
+            {t("input.reading")}
           {:else if isBatch}
-            Tải {urlList.length} link
+            {t("input.batch", { n: urlList.length })}
           {:else}
-            Lấy video
+            {t("input.get")}
           {/if}
         </button>
       </form>
 
       {#if isBatch && batchRead == null && !fetching}
-        <p class="note batch-note">
-          Đã nhận <b>{urlList.length} link</b>. Chọn cách tải bên dưới rồi bấm <b>Tải {urlList.length} link</b>: app đọc lần
-          lượt từng link và tự thêm vào danh sách tải, mỗi video lấy chất lượng cao nhất.
-        </p>
+        <p class="note batch-note">{t("input.batchNote", { n: urlList.length })}</p>
         {@render formatPicker(false)}
       {/if}
 
@@ -976,25 +1005,26 @@
       {/if}
 
       {#if fetchError}<p class="error">{fetchError}</p>{/if}
+      {#if notice}<p class="note">{notice}</p>{/if}
 
       {#if info}
         {@const site = siteOf(info.site)}
         <div class="preview">
           <div class="thumb">
-            {#if info.thumbnail}<img src={info.thumbnail} alt="" referrerpolicy="no-referrer" />{/if}
+            {#if info.thumbnail}<img src={info.thumbnail} alt="" referrerpolicy="no-referrer" onerror={thumbFallback} />{/if}
             {#if info.duration}<span class="duration">{fmtDuration(info.duration)}</span>{/if}
           </div>
           <div class="meta">
             <div class="tags">
               <span class="site {site}">{SITE_NAME[site]}</span>
-              {#if info.maxHeight}<span class="tag">Tối đa {fmtQuality(info.maxHeight)}</span>{/if}
+              {#if info.maxHeight}<span class="tag">{t("preview.max", { q: fmtQuality(info.maxHeight) })}</span>{/if}
             </div>
-            <label class="title-edit" title="Bấm để đổi tên file trước khi tải">
-              <input bind:value={customTitle} placeholder={info.title} spellcheck="false" aria-label="Tên file" />
+            <label class="title-edit" title={t("preview.rename")}>
+              <input bind:value={customTitle} placeholder={info.title} spellcheck="false" aria-label={t("preview.fileName")} />
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Zm11-15 4 4" /></svg>
             </label>
             {#if customTitle.trim() !== info.title}
-              <button class="link restore" onclick={() => (customTitle = info!.title)}>Dùng lại tên gốc</button>
+              <button class="link restore" onclick={() => (customTitle = info!.title)}>{t("preview.restore")}</button>
             {/if}
             {#if info.uploader}<p class="muted">{info.uploader}</p>{/if}
           </div>
@@ -1003,8 +1033,8 @@
         {@render formatPicker(audioOnly)}
 
         {#if effectiveMode !== "audio" && qualityOptions.length > 1}
-          <div class="qualities" role="radiogroup" aria-label="Chất lượng">
-            <span class="label">Chất lượng</span>
+          <div class="qualities" role="radiogroup" aria-label={t("preview.quality")}>
+            <span class="label">{t("preview.quality")}</span>
             {#each qualityOptions as h (h)}
               <button role="radio" aria-checked={chosenQuality === h} class:selected={chosenQuality === h} onclick={() => (quality = h)}>
                 {fmtQuality(h)}
@@ -1014,10 +1044,10 @@
         {/if}
 
         {#if info.subtitles.length}
-          <div class="qualities" role="radiogroup" aria-label="Phụ đề">
-            <span class="label">Phụ đề</span>
+          <div class="qualities" role="radiogroup" aria-label={t("preview.subtitles")}>
+            <span class="label">{t("preview.subtitles")}</span>
             <button role="radio" aria-checked={subtitleIndex < 0} class:selected={subtitleIndex < 0} onclick={() => (subtitleIndex = -1)}>
-              Không
+              {t("common.none")}
             </button>
             {#each info.subtitles as s, i (s.lang + s.auto)}
               <button role="radio" aria-checked={subtitleIndex === i} class:selected={subtitleIndex === i} onclick={() => (subtitleIndex = i)}>
@@ -1028,13 +1058,13 @@
           {#if subtitleIndex >= 0}
             <p class="note format-hint">
               {effectiveMode === "audio"
-                ? "Phụ đề được lưu thành file .srt cạnh file âm thanh."
-                : "Phụ đề được gắn vào video (bật/tắt trong trình phát) và lưu thêm file .srt cạnh video."}
+                ? t("preview.subtitleAudio")
+                : t("preview.subtitleVideo")}
             </p>
           {/if}
         {/if}
 
-        <button class="primary big" onclick={enqueue} disabled={!outDir}>Tải về</button>
+        <button class="primary big" onclick={enqueue} disabled={!outDir}>{t("preview.download")}</button>
       {/if}
 
       {#if playlist}
@@ -1044,9 +1074,9 @@
             <div class="tags">
               <span class="site {site}">{SITE_NAME[site]}</span>
               <span class="tag">
-                {playlist.entries.length} mục{playlist.count && playlist.count > playlist.entries.length
-                  ? ` (trong ${playlist.count}, lấy ${playlist.entries.length} mục mới nhất)`
-                  : ""}
+                {playlist.count && playlist.count > playlist.entries.length
+                  ? t("playlist.itemsOf", { n: playlist.entries.length, count: playlist.count })
+                  : t("playlist.items", { n: playlist.entries.length })}
               </span>
             </div>
             <h3>{playlist.title}</h3>
@@ -1054,9 +1084,9 @@
           </div>
 
           <div class="playlist-tools">
-            <span class="muted">Đã chọn {pickedCount}/{playlist.entries.length}</span>
+            <span class="muted">{t("playlist.picked", { n: pickedCount, total: playlist.entries.length })}</span>
             <button class="link" onclick={() => (picked = picked.map(() => pickedCount < picked.length))}>
-              {pickedCount < picked.length ? "Chọn tất cả" : "Bỏ chọn tất cả"}
+              {pickedCount < picked.length ? t("playlist.pickAll") : t("playlist.unpickAll")}
             </button>
           </div>
 
@@ -1072,7 +1102,7 @@
                         alt=""
                         loading="lazy"
                         referrerpolicy="no-referrer"
-                        onerror={(ev) => ((ev.currentTarget as HTMLImageElement).style.visibility = "hidden")}
+                        onerror={thumbFallback}
                       />
                     {/if}
                   </span>
@@ -1085,7 +1115,7 @@
 
           {@render formatPicker(audioOnly)}
           <button class="primary big" onclick={enqueuePlaylist} disabled={!outDir || !pickedCount}>
-            Tải {pickedCount} {audioOnly ? "bài" : "video"}
+            {t(audioOnly ? "playlist.downloadTracks" : "playlist.downloadVideos", { n: pickedCount })}
           </button>
         </div>
       {/if}
@@ -1094,8 +1124,8 @@
     {#if items.length}
       <section class="queue">
         <div class="queue-head">
-          <h2>Lịch sử tải</h2>
-          {#if hasFinished}<button class="link" onclick={clearFinished}>Xoá mục đã xong</button>{/if}
+          <h2>{t("history.title")}</h2>
+          {#if hasFinished}<button class="link" onclick={clearFinished}>{t("history.clear")}</button>{/if}
         </div>
 
         {#each groups as g (g.day)}
@@ -1109,7 +1139,7 @@
                     src={it.info.thumbnail}
                     alt=""
                     referrerpolicy="no-referrer"
-                    onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = "hidden")}
+                    onerror={thumbFallback}
                   />
                 {/if}
               </div>
@@ -1118,29 +1148,29 @@
                 <div class="sub">
                   <span class="site {siteOf(it.info.site)}">{SITE_NAME[siteOf(it.info.site)]}</span>
                   <span>{itemFormat(it)}</span>
-                  <span title={new Date(it.doneAt ?? it.addedAt).toLocaleString("vi-VN")}>{fmtTime(it.doneAt ?? it.addedAt)}</span>
+                  <span title={new Date(it.doneAt ?? it.addedAt).toLocaleString(localeTag())}>{fmtTime(it.doneAt ?? it.addedAt)}</span>
                 </div>
                 {#if it.status === "downloading" || it.status === "processing" || it.status === "queued"}
                   <div class="bar" class:indeterminate={it.percent == null || it.status === "processing"}>
                     <div style:width="{it.percent ?? 0}%"></div>
                   </div>
                 {/if}
-                <div class="status">{it.missing ? "File đã bị xoá hoặc chuyển đi" : statusText(it)}</div>
+                <div class="status">{it.missing ? t("item.missing") : statusText(it)}</div>
                 {#if it.note && it.status === "done"}<div class="item-note">{it.note}</div>{/if}
               </div>
               <div class="actions">
                 {#if it.status === "done" && it.file && !it.missing}
-                  <button onclick={() => openFile(it)}>Mở</button>
-                  <button onclick={() => openFile(it, true)}>Thư mục</button>
+                  <button onclick={() => openFile(it)}>{t("item.open")}</button>
+                  <button onclick={() => openFile(it, true)}>{t("item.folder")}</button>
                 {:else if it.missing}
-                  <button onclick={() => retry(it)}>Tải lại</button>
+                  <button onclick={() => retry(it)}>{t("item.redownload")}</button>
                 {:else if it.status === "error" || it.status === "canceled"}
-                  <button onclick={() => retry(it)}>Thử lại</button>
+                  <button onclick={() => retry(it)}>{t("common.retry")}</button>
                 {/if}
                 {#if it.status === "downloading" || it.status === "processing" || it.status === "queued"}
-                  <button onclick={() => cancel(it)}>Huỷ</button>
+                  <button onclick={() => cancel(it)}>{t("item.cancel")}</button>
                 {:else}
-                  <button class="ghost icon" title="Xoá khỏi danh sách" aria-label="Xoá" onclick={() => remove(it)}>✕</button>
+                  <button class="ghost icon" title={t("item.remove")} aria-label={t("item.removeShort")} onclick={() => remove(it)}>✕</button>
                 {/if}
               </div>
             </article>
@@ -1148,7 +1178,7 @@
         {/each}
       </section>
     {:else if !info && !fetching}
-      <p class="empty">Copy link video rồi quay lại đây, app sẽ tự dán.</p>
+      <p class="empty">{t("history.empty")}</p>
     {/if}
   {/if}
 

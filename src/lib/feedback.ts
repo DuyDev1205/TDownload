@@ -2,6 +2,7 @@
 // người làm app. Người gửi theo dõi trạng thái bằng id; người làm app duyệt ngay trong VidSaver bằng mã quản trị.
 
 import { invoke } from "@tauri-apps/api/core";
+import { t } from "./i18n.svelte";
 import { load, save } from "./storage";
 
 /** URL ứng dụng web của Apps Script (Triển khai → Ứng dụng web). Rỗng nghĩa là chưa thiết lập. */
@@ -11,16 +12,11 @@ export const FEEDBACK_URL: string =
 export type FeedbackType = "feature" | "bug";
 export type FeedbackStatus = "pending" | "accepted" | "rejected";
 
-export const STATUS_NAME: Record<FeedbackStatus, string> = {
-  pending: "Đang chờ",
-  accepted: "Chấp nhận",
-  rejected: "Từ chối",
-};
+export const FEEDBACK_TYPES: FeedbackType[] = ["feature", "bug"];
 
-export const TYPE_NAME: Record<FeedbackType, string> = {
-  feature: "Góp ý tính năng",
-  bug: "Báo lỗi",
-};
+/** Tên trạng thái / loại theo ngôn ngữ đang chọn, ví dụ "Đang chờ", "Báo lỗi". */
+export const statusName = (s: FeedbackStatus) => t(`fb.${s}`);
+export const typeName = (k: FeedbackType) => t(`fb.${k}`);
 
 export interface ImageData {
   mime: string;

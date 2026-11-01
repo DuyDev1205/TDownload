@@ -7,10 +7,7 @@ import { load, save } from "./storage";
 
 export type ThemeMode = "light" | "dark";
 
-export const THEME_MODES: [ThemeMode, string][] = [
-  ["light", "Sáng"],
-  ["dark", "Tối"],
-];
+export const THEME_MODES: ThemeMode[] = ["light", "dark"];
 
 const systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 const saved = load("theme", "");

@@ -4,16 +4,13 @@
   import type { AdminItem, FeedbackStatus, FeedbackType, ImageData, SentItem, UsageStats } from "./feedback";
   import { load, save } from "./storage";
   import { appVersionTag, reportUsage, systemInfo } from "./usage";
+  import { localeTag, t } from "./i18n.svelte";
 
   /** `active`: tab đang hiển thị. `unseen`: số góp ý có kết quả mới chưa xem (để App hiện chấm đỏ). */
   let { active, unseen = $bindable(0) }: { active: boolean; unseen?: number } = $props();
 
   const MAX_IMAGES = 5;
   const CHECK_EVERY = 30 * 60 * 1000;
-  const PLACEHOLDER: Record<FeedbackType, string> = {
-    feature: "Bạn muốn VidSaver có thêm tính năng gì? Dùng trong trường hợp nào?",
-    bug: "Bạn đã làm gì (dán link nào, chọn gì), lỗi hiện ra thế nào, và bạn mong app làm gì?",
-  };
 
   // Khi chạy `npm run dev` trên trình duyệt, backend giả (mock.ts) đóng vai máy chủ góp ý.
   const configured = fb.FEEDBACK_URL !== "" || import.meta.env.DEV;
@@ -111,7 +108,7 @@
       try {
         images.push(await fb.readImage(file));
       } catch {
-        sendError = "Không đọc được ảnh này.";
+        sendError = t("fb.badImage");
       }
     }
   }
@@ -151,7 +148,7 @@
       title = "";
       description = "";
       images = [];
-      sentNote = "Đã gửi, cảm ơn bạn! Kết quả sẽ hiện ở mục Đã gửi bên dưới.";
+      sentNote = t("fb.thanks");
       if (adminKey) loadAdmin();
     } catch (e) {
       sendError = String(e);
@@ -217,35 +214,35 @@
   }
 
   const fmtDate = (v: string | number) =>
-    new Date(v).toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
+    new Date(v).toLocaleString(localeTag(), { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
 </script>
 
 {#if !configured}
   <section class="card">
-    <p class="muted">Tính năng góp ý chưa được thiết lập máy chủ (xem feedback/Code.gs).</p>
+    <p class="muted">{t("fb.notConfigured")}</p>
   </section>
 {:else}
   <section class="card feedback" onpaste={onPaste}>
-    <div class="qualities" role="radiogroup" aria-label="Loại">
-      {#each Object.entries(fb.TYPE_NAME) as [value, label] (value)}
-        <button role="radio" aria-checked={type === value} class:selected={type === value} onclick={() => (type = value as FeedbackType)}>
-          {label}
+    <div class="qualities" role="radiogroup" aria-label={t("fb.type")}>
+      {#each fb.FEEDBACK_TYPES as value (value)}
+        <button role="radio" aria-checked={type === value} class:selected={type === value} onclick={() => (type = value)}>
+          {fb.typeName(value)}
         </button>
       {/each}
     </div>
 
-    <input bind:value={title} maxlength="200" autocomplete="off" placeholder={type === "bug" ? "Tóm tắt lỗi, ví dụ: Không tải được video TikTok" : "Tên tính năng bạn muốn có"} />
-    <textarea bind:value={description} maxlength="5000" rows="6" placeholder={PLACEHOLDER[type]}></textarea>
+    <input bind:value={title} maxlength="200" autocomplete="off" placeholder={type === "bug" ? t("fb.titleBug") : t("fb.titleFeature")} />
+    <textarea bind:value={description} maxlength="5000" rows="6" placeholder={type === "bug" ? t("fb.descBug") : t("fb.descFeature")}></textarea>
 
     <div class="shots">
       {#each images as img, i (img.url)}
         <div class="shot">
           <img src={img.url} alt="" />
-          <button class="ghost icon" title="Bỏ ảnh" aria-label="Bỏ ảnh" onclick={() => images.splice(i, 1)}>✕</button>
+          <button class="ghost icon" title={t("fb.removeImage")} aria-label={t("fb.removeImage")} onclick={() => images.splice(i, 1)}>✕</button>
         </div>
       {/each}
       {#if images.length < MAX_IMAGES}
-        <button class="add-shot" onclick={() => fileInput?.click()}><b>+ Thêm ảnh</b></button>
+        <button class="add-shot" onclick={() => fileInput?.click()}><b>{t("fb.addImage")}</b></button>
       {/if}
       <input
         bind:this={fileInput}
@@ -260,27 +257,27 @@
       />
     </div>
 
-    <input bind:value={contact} maxlength="200" autocomplete="off" placeholder="Liên hệ của bạn" />
+    <input bind:value={contact} maxlength="200" autocomplete="off" placeholder={t("fb.contact")} />
 
     {#if sendError}<p class="error">{sendError}</p>{/if}
     {#if sentNote}<p class="ok-note">{sentNote}</p>{/if}
     <button class="primary big" onclick={send} disabled={sending || !title.trim()}>
-      {sending ? "Đang gửi…" : `Gửi ${type === "bug" ? "báo lỗi" : "góp ý"}`}
+      {sending ? t("fb.sending") : type === "bug" ? t("fb.sendBug") : t("fb.sendFeature")}
     </button>
   </section>
 
   {#if sent.length}
     <section class="queue">
-      <div class="queue-head"><h2>Đã gửi</h2></div>
+      <div class="queue-head"><h2>{t("fb.sent")}</h2></div>
       {#each sent as s (s.id)}
         <article class="card fb-item" class:fresh={fresh.includes(s.id)}>
           <div class="fb-line">
-            <span class="fb-type {s.type}">{fb.TYPE_NAME[s.type]}</span>
+            <span class="fb-type {s.type}">{fb.typeName(s.type)}</span>
             <span class="fb-title" title={s.title}>{s.title}</span>
-            <span class="fb-status {s.status}">{fb.STATUS_NAME[s.status]}</span>
+            <span class="fb-status {s.status}">{fb.statusName(s.status)}</span>
           </div>
           <small class="muted">{fmtDate(s.createdAt)}</small>
-          {#if s.reply}<p class="fb-reply"><b>Phản hồi:</b> {s.reply}</p>{/if}
+          {#if s.reply}<p class="fb-reply"><b>{t("fb.reply")}</b> {s.reply}</p>{/if}
         </article>
       {/each}
     </section>
@@ -288,28 +285,35 @@
 
   <section class="admin">
     {#if adminKey && adminItems}
-      <div class="queue-head"><h2>Người dùng</h2></div>
+      <div class="queue-head"><h2>{t("admin.users")}</h2></div>
       {#if stats}
         <div class="card usage">
           <div class="usage-tiles">
-            {#each [[stats.day, "24 giờ qua"], [stats.week, "7 ngày qua"], [stats.month, "30 ngày qua"], [stats.total, "Tổng số máy"], [stats.downloads, "Lượt tải"]] as [n, label] (label)}
+            {#each [[stats.day, t("admin.day")], [stats.week, t("admin.week")], [stats.month, t("admin.month")], [stats.total, t("admin.total")], [stats.downloads, t("admin.downloads")]] as [n, label] (label)}
               <div><b>{n}</b><small class="muted">{label}</small></div>
             {/each}
           </div>
-          <small class="muted">Máy mới trong 7 ngày: {stats.newWeek}</small>
-          <small class="muted">Phiên bản (30 ngày): {breakdown(stats.versions)}</small>
-          <small class="muted">Hệ điều hành (30 ngày): {breakdown(stats.systems)}</small>
+          <small class="muted">{t("admin.newWeek", { n: stats.newWeek })}</small>
+          <small class="muted">{t("admin.versions", { list: breakdown(stats.versions) })}</small>
+          <small class="muted">{t("admin.systems", { list: breakdown(stats.systems) })}</small>
           {#if stats.machines?.length}
             <details class="machines">
-              <summary>Danh sách máy ({stats.machines.length})</summary>
+              <summary>{t("admin.machines", { n: stats.machines.length })}</summary>
               <table>
                 <thead>
-                  <tr><th>Tên</th><th>Phiên bản</th><th>Hệ điều hành</th><th>Lượt tải</th><th>Dùng lần đầu</th><th>Gần nhất</th></tr>
+                  <tr>
+                    <th>{t("admin.colName")}</th>
+                    <th>{t("admin.colVersion")}</th>
+                    <th>{t("admin.colOs")}</th>
+                    <th>{t("admin.downloads")}</th>
+                    <th>{t("admin.colFirst")}</th>
+                    <th>{t("admin.colLast")}</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {#each stats.machines as m, i (i)}
                     <tr>
-                      <td>{m.name || "(chưa điền tên)"}</td>
+                      <td>{m.name || t("admin.noName")}</td>
                       <td>{m.appVersion}</td>
                       <td>{m.os.split(" ")[0]}</td>
                       <td>{m.installs}</td>
@@ -321,40 +325,37 @@
               </table>
             </details>
           {/if}
-          <small class="muted">
-            Chỉ tính máy đã cài và mở app, mỗi máy một lần dù mở bao nhiêu lần. Lượt tải = lần cài đầu + mỗi lần lên phiên
-            bản mới (kể cả tự cập nhật). Không tính {stats.internal} máy nội bộ (đã đăng nhập Quản trị).
-          </small>
+          <small class="muted">{t("admin.statsNote", { n: stats.internal })}</small>
         </div>
       {:else if statsError}
-        <p class="error">Chưa xem được thống kê: {statsError} Hãy cập nhật Code.gs trên Apps Script (xem hướng dẫn đầu file).</p>
+        <p class="error">{t("admin.statsError", { e: statsError })}</p>
       {:else}
-        <p class="muted">Đang tải thống kê…</p>
+        <p class="muted">{t("admin.statsLoading")}</p>
       {/if}
 
       <div class="queue-head">
-        <h2>Quản lý góp ý {pendingCount ? `· ${pendingCount} đang chờ` : ""}</h2>
+        <h2>{t("admin.manage")} {pendingCount ? t("admin.pendingCount", { n: pendingCount }) : ""}</h2>
         <div class="admin-tools">
-          <button class="link" onclick={() => loadAdmin()} disabled={adminLoading}>{adminLoading ? "Đang tải…" : "Tải lại"}</button>
-          <button class="link" onclick={logout}>Thoát quản trị</button>
+          <button class="link" onclick={() => loadAdmin()} disabled={adminLoading}>{adminLoading ? t("admin.loading") : t("admin.reload")}</button>
+          <button class="link" onclick={logout}>{t("admin.logout")}</button>
         </div>
       </div>
-      <div class="qualities" role="radiogroup" aria-label="Lọc">
-        {#each [["pending", "Đang chờ"], ["accepted", "Chấp nhận"], ["rejected", "Từ chối"], ["all", "Tất cả"]] as [value, label] (value)}
+      <div class="qualities" role="radiogroup" aria-label={t("admin.filter")}>
+        {#each [["pending", t("fb.pending")], ["accepted", t("fb.accepted")], ["rejected", t("fb.rejected")], ["all", t("admin.all")]] as [value, label] (value)}
           <button role="radio" aria-checked={filter === value} class:selected={filter === value} onclick={() => (filter = value as FeedbackStatus | "all")}>
             {label}
           </button>
         {/each}
       </div>
       {#if adminError}<p class="error">{adminError}</p>{/if}
-      {#if !shownItems.length}<p class="muted">Không có góp ý nào.</p>{/if}
+      {#if !shownItems.length}<p class="muted">{t("admin.empty")}</p>{/if}
       {#each shownItems as item (item.id)}
         <article class="card fb-item admin-item">
           <button class="fb-line fb-toggle" onclick={() => toggle(item)}>
-            <span class="fb-type {item.type}">{fb.TYPE_NAME[item.type]}</span>
+            <span class="fb-type {item.type}">{fb.typeName(item.type)}</span>
             <span class="fb-title" title={item.title}>{item.title}</span>
             {#if item.images.length}<small class="muted">🖼 {item.images.length}</small>{/if}
-            <span class="fb-status {item.status}">{fb.STATUS_NAME[item.status]}</span>
+            <span class="fb-status {item.status}">{fb.statusName(item.status)}</span>
           </button>
           <small class="muted">
             {fmtDate(item.createdAt)} · VidSaver {item.appVersion || "?"} · {item.os || "?"}{item.contact ? ` · ${item.contact}` : ""}
@@ -366,24 +367,24 @@
                 {#each item.images as fileId (fileId)}
                   <div class="shot">
                     {#if adminImages[fileId]}
-                      <button class="shot-view" onclick={() => (viewer = adminImages[fileId])} aria-label="Xem ảnh lớn">
+                      <button class="shot-view" onclick={() => (viewer = adminImages[fileId])} aria-label={t("admin.viewImage")}>
                         <img src={adminImages[fileId]} alt="" />
                       </button>
                     {:else if adminImages[fileId] === ""}
-                      <small class="muted">Không tải được ảnh</small>
+                      <small class="muted">{t("admin.imageFailed")}</small>
                     {:else}
-                      <small class="muted">Đang tải ảnh…</small>
+                      <small class="muted">{t("admin.imageLoading")}</small>
                     {/if}
                   </div>
                 {/each}
               </div>
             {/if}
-            <textarea bind:value={drafts[item.id]} rows="2" maxlength="2000" placeholder="Lời nhắn cho người gửi (không bắt buộc)"></textarea>
+            <textarea bind:value={drafts[item.id]} rows="2" maxlength="2000" placeholder={t("admin.replyPlaceholder")}></textarea>
             <div class="review-actions">
-              <button class="primary" onclick={() => review(item, "accepted")} disabled={saving === item.id}>Chấp nhận</button>
-              <button class="danger" onclick={() => review(item, "rejected")} disabled={saving === item.id}>Từ chối</button>
+              <button class="primary" onclick={() => review(item, "accepted")} disabled={saving === item.id}>{t("fb.accepted")}</button>
+              <button class="danger" onclick={() => review(item, "rejected")} disabled={saving === item.id}>{t("fb.rejected")}</button>
               {#if item.status !== "pending"}
-                <button onclick={() => review(item, "pending")} disabled={saving === item.id}>Đưa về Đang chờ</button>
+                <button onclick={() => review(item, "pending")} disabled={saving === item.id}>{t("admin.backToPending")}</button>
               {/if}
             </div>
           {/if}
@@ -403,22 +404,22 @@
           class="secret"
           autocomplete="off"
           spellcheck="false"
-          placeholder="Mã quản trị (lấy khi chạy hàm setup trong Apps Script)"
+          placeholder={t("admin.keyPlaceholder")}
         />
-        <button type="submit" class="primary" disabled={adminLoading || !keyDraft.trim()}>{adminLoading ? "Đang kiểm tra…" : "Vào"}</button>
+        <button type="submit" class="primary" disabled={adminLoading || !keyDraft.trim()}>{adminLoading ? t("admin.checking") : t("admin.enter")}</button>
       </form>
       {#if adminError}<p class="error">{adminError}</p>{/if}
     {:else if adminKey}
       {#if adminError}<p class="error">{adminError}</p>{/if}
-      <button class="link" onclick={() => loadAdmin()} disabled={adminLoading}>{adminLoading ? "Đang tải…" : "Mở quản lý góp ý"}</button>
+      <button class="link" onclick={() => loadAdmin()} disabled={adminLoading}>{adminLoading ? t("admin.loading") : t("admin.open")}</button>
     {:else}
-      <button class="link admin-link" onclick={() => (showLogin = true)}>Quản trị</button>
+      <button class="link admin-link" onclick={() => (showLogin = true)}>{t("admin.link")}</button>
     {/if}
   </section>
 {/if}
 
 {#if viewer}
-  <button class="viewer" onclick={() => (viewer = null)} aria-label="Đóng ảnh">
+  <button class="viewer" onclick={() => (viewer = null)} aria-label={t("fb.closeImage")}>
     <img src={viewer} alt="" />
   </button>
 {/if}

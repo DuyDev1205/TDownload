@@ -6,13 +6,14 @@ use std::time::Duration;
 use serde_json::Value;
 
 use crate::deps::err;
+use crate::i18n::{self, t};
 
 /// Gửi một yêu cầu tới máy chủ góp ý, trả về phần `data` của kết quả.
 /// Chỉ cho phép địa chỉ Google Apps Script để lệnh này không bị dùng gọi tới nơi khác.
 #[tauri::command]
 pub async fn feedback_request(url: String, body: Value) -> Result<Value, String> {
     if !url.starts_with("https://script.google.com/macros/s/") {
-        return Err("Địa chỉ máy chủ góp ý không hợp lệ.".into());
+        return Err(t(i18n::FEEDBACK_BAD_URL).into());
     }
     let client = reqwest::Client::builder()
         .user_agent("VidSaver")
@@ -27,15 +28,15 @@ pub async fn feedback_request(url: String, body: Value) -> Result<Value, String>
         .send()
         .await
         .and_then(|r| r.error_for_status())
-        .map_err(|e| format!("Không kết nối được máy chủ góp ý: {e}"))?
+        .map_err(|e| t(i18n::FEEDBACK_CONNECT).replace("{e}", &e.to_string()))?
         .text()
         .await
         .map_err(err)?;
     let v: Value = serde_json::from_str(&text)
-        .map_err(|_| "Máy chủ góp ý trả về dữ liệu lạ (đã triển khai Apps Script đúng cách chưa?).".to_string())?;
+        .map_err(|_| t(i18n::FEEDBACK_BAD_DATA).to_string())?;
     if v["ok"].as_bool() == Some(true) {
         Ok(v["data"].clone())
     } else {
-        Err(v["error"].as_str().unwrap_or("Máy chủ góp ý báo lỗi.").to_string())
+        Err(v["error"].as_str().unwrap_or(t(i18n::FEEDBACK_SERVER_ERROR)).to_string())
     }
 }
