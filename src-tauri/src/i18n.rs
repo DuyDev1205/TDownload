@@ -140,48 +140,6 @@ pub const HINT_SITE_CHANGED: Text = [
     "サイトが変更された可能性があります。設定 → yt-dlp をアップデート してから、もう一度ダウンロードしてください。",
 ];
 
-// Torrent (torrent.rs). {e}: lỗi gốc.
-pub const TORRENT_START_FAILED: Text = [
-    "Không khởi động được trình tải torrent: {e}",
-    "Couldn't start the torrent downloader: {e}",
-    "No se pudo iniciar el descargador de torrents: {e}",
-    "Der Torrent-Downloader konnte nicht gestartet werden: {e}",
-    "无法启动种子下载器：{e}",
-    "トレントのダウンローダーを起動できませんでした：{e}",
-];
-pub const TORRENT_NOT_FOUND: Text = [
-    "Không tìm thấy torrent này (có thể đã bị xoá).",
-    "This torrent wasn't found (it may have been removed).",
-    "No se encontró este torrent (puede que se haya quitado).",
-    "Dieser Torrent wurde nicht gefunden (vielleicht wurde er entfernt).",
-    "找不到此种子（可能已被移除）。",
-    "このトレントが見つかりません（削除された可能性があります）。",
-];
-pub const TORRENT_READ_FILE: Text = [
-    "Không đọc được file .torrent: {e}",
-    "Couldn't read the .torrent file: {e}",
-    "No se pudo leer el archivo .torrent: {e}",
-    "Die .torrent-Datei konnte nicht gelesen werden: {e}",
-    "无法读取 .torrent 文件：{e}",
-    ".torrent ファイルを読み込めませんでした：{e}",
-];
-pub const TORRENT_NO_METADATA: Text = [
-    "Không lấy được thông tin torrent sau 2 phút: có thể không còn ai chia sẻ, hoặc mạng đang chặn torrent.",
-    "Couldn't get the torrent's details within 2 minutes: nobody may be sharing it anymore, or your network blocks torrents.",
-    "No se pudo obtener la información del torrent en 2 minutos: puede que nadie lo comparta ya o que tu red bloquee los torrents.",
-    "Die Torrent-Infos konnten in 2 Minuten nicht geladen werden: Vielleicht teilt ihn niemand mehr, oder dein Netzwerk blockiert Torrents.",
-    "2 分钟内无法获取种子信息：可能已没有人在分享，或你的网络屏蔽了种子。",
-    "2 分以内にトレントの情報を取得できませんでした：共有している人がいないか、ネットワークがトレントをブロックしている可能性があります。",
-];
-pub const TORRENT_ADD_FAILED: Text = [
-    "Không mở được torrent: {e}",
-    "Couldn't open the torrent: {e}",
-    "No se pudo abrir el torrent: {e}",
-    "Der Torrent konnte nicht geöffnet werden: {e}",
-    "无法打开种子：{e}",
-    "トレントを開けませんでした：{e}",
-];
-
 // Máy chủ góp ý (feedback.rs).
 pub const FEEDBACK_BAD_URL: Text = [
     "Địa chỉ máy chủ góp ý không hợp lệ.",

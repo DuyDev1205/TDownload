@@ -3,7 +3,6 @@ mod download;
 mod feedback;
 mod i18n;
 mod proxy;
-mod torrent;
 
 use tauri::Manager;
 
@@ -17,11 +16,10 @@ pub fn run() {
                     let _ = std::fs::remove_dir_all(dir.join("whisper"));
                 });
             }
-            // Đã từng dùng torrent thì khởi động phiên tải ngay để các torrent dở dang tải tiếp.
-            if torrent::session_dir(app.handle()).is_ok_and(|d| d.exists()) {
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = torrent::session(&handle).await;
+            // Bản 0.6.6 có tab Torrent (đã gỡ) lưu phiên tải ở torrent-session: xoá đi. File đã tải vẫn giữ nguyên.
+            if let Ok(dir) = app.path().app_data_dir() {
+                std::thread::spawn(move || {
+                    let _ = std::fs::remove_dir_all(dir.join("torrent-session"));
                 });
             }
             Ok(())
@@ -32,7 +30,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(download::Jobs::default())
-        .manage(torrent::Torrents::default())
         .invoke_handler(tauri::generate_handler![
             deps::deps_status,
             deps::install_deps,
@@ -43,12 +40,6 @@ pub fn run() {
             download::files_exist,
             feedback::feedback_request,
             i18n::set_language,
-            torrent::torrent_add,
-            torrent::torrent_start,
-            torrent::torrent_pause,
-            torrent::torrent_resume,
-            torrent::torrent_remove,
-            torrent::torrent_list,
         ])
         .build(tauri::generate_context!())
         .expect("không khởi động được ứng dụng")

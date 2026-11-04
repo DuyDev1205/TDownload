@@ -100,44 +100,6 @@ export const startDownload = (args: {
 export const cancelDownload = (id: string) => invoke<void>("cancel_download", { id });
 export const filesExist = (paths: string[]) => invoke<boolean[]>("files_exist", { paths });
 
-// Torrent (src-tauri/src/torrent.rs).
-export interface TorrentFile {
-  index: number;
-  name: string;
-  size: number;
-}
-
-export interface TorrentAdded {
-  id: number;
-  name: string;
-  folder: string;
-  files: TorrentFile[];
-  /** Torrent này đã có trong danh sách từ trước. */
-  already: boolean;
-}
-
-export type TorrentState = "checking" | "downloading" | "paused" | "done" | "error";
-
-export interface TorrentStatus {
-  id: number;
-  name: string;
-  state: TorrentState;
-  progress: number;
-  total: number;
-  /** Byte/giây. */
-  speed: number;
-  error: string | null;
-  folder: string;
-}
-
-/** `source`: link magnet, link .torrent hoặc đường dẫn file .torrent. Mở ở trạng thái tạm dừng để chọn file. */
-export const torrentAdd = (source: string, outDir: string) => invoke<TorrentAdded>("torrent_add", { source, outDir });
-export const torrentStart = (id: number, files: number[]) => invoke<void>("torrent_start", { id, files });
-export const torrentPause = (id: number) => invoke<void>("torrent_pause", { id });
-export const torrentResume = (id: number) => invoke<void>("torrent_resume", { id });
-export const torrentRemove = (id: number, deleteFiles: boolean) => invoke<void>("torrent_remove", { id, deleteFiles });
-export const torrentList = () => invoke<TorrentStatus[]>("torrent_list");
-
 export const onDepsProgress = (cb: (p: DepsProgress) => void) => listen<DepsProgress>("deps-progress", (e) => cb(e.payload));
 export const onProgress = (cb: (p: DlProgress) => void) => listen<DlProgress>("dl-progress", (e) => cb(e.payload));
 export const onDone = (cb: (d: DlDone) => void) => listen<DlDone>("dl-done", (e) => cb(e.payload));
