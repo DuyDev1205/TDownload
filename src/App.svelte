@@ -43,6 +43,7 @@
   import { getUserName, nameAsked, setUserName, skipUserName, startUsageReport } from "./lib/usage";
   import Logo from "./lib/Logo.svelte";
   import FeedbackTab from "./lib/FeedbackTab.svelte";
+  import TorrentTab from "./lib/TorrentTab.svelte";
 
   type Status = "queued" | "downloading" | "processing" | "done" | "error" | "canceled";
 
@@ -149,7 +150,9 @@
     cookieKind === "file" ? (cookieFile ? `file:${cookieFile}` : "") : cookieKind ? `browser:${cookieKind}` : "",
   );
 
-  let tab = $state<"download" | "feedback">("download");
+  let tab = $state<"download" | "torrent" | "feedback">("download");
+  /** Link magnet dán vào ô tải video: chuyển sang tab Torrent để mở. */
+  let torrentIncoming = $state("");
   let feedbackUnseen = $state(0);
   let showSettings = $state(false);
   let themeMode = $state(getTheme());
@@ -370,6 +373,12 @@
   async function getInfo() {
     const found = extractUrl(url) ?? url.trim();
     if (!found || fetching) return;
+    if (/^magnet:/i.test(found)) {
+      torrentIncoming = found;
+      tab = "torrent";
+      url = "";
+      return;
+    }
     const target = normalizeUrl(found);
     // Link video YouTube mở từ trong playlist (watch?v=...&list=...): hiện cả danh sách để chọn.
     const wholeList = /youtube\.com\/watch\?.*[?&]list=|youtu\.be\/.*[?&]list=/i.test(target);
@@ -945,10 +954,18 @@
       <button role="tab" aria-selected={tab === "download"} class:active={tab === "download"} onclick={() => (tab = "download")}>
         {t("tab.download")}
       </button>
+      <button role="tab" aria-selected={tab === "torrent"} class:active={tab === "torrent"} onclick={() => (tab = "torrent")}>
+        {t("tab.torrent")}
+      </button>
       <button role="tab" aria-selected={tab === "feedback"} class:active={tab === "feedback"} onclick={() => (tab = "feedback")}>
         {t("tab.feedback")}
         {#if feedbackUnseen}<span class="dot" title={t("tab.newReply")}></span>{/if}
       </button>
+    </div>
+
+    <!-- Giữ tab torrent để vẫn cập nhật tiến độ khi đang ở tab khác. -->
+    <div class="tab-page" hidden={tab !== "torrent"}>
+      <TorrentTab active={tab === "torrent"} {outDir} bind:incoming={torrentIncoming} />
     </div>
 
     <!-- Luôn giữ tab góp ý để nó tự kiểm tra kết quả và báo chấm đỏ cả khi đang ở tab khác. -->

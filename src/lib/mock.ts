@@ -109,6 +109,75 @@ function fakeFeedback(req: Record<string, any>) {
   throw "Yêu cầu không hợp lệ.";
 }
 
+// Torrent giả: mỗi lần hỏi danh sách thì tải thêm một chút. Link có chữ "error" thì báo lỗi.
+interface FakeTorrent {
+  id: number;
+  name: string;
+  state: "checking" | "downloading" | "paused" | "done" | "error";
+  progress: number;
+  total: number;
+  folder: string;
+  files: { index: number; name: string; size: number }[];
+}
+const torrents: FakeTorrent[] = [];
+
+async function fakeTorrent(cmd: string, a: Record<string, any>) {
+  const find = () => {
+    const x = torrents.find((t) => t.id === a.id);
+    if (!x) throw "Không tìm thấy torrent này (có thể đã bị xoá).";
+    return x;
+  };
+  switch (cmd) {
+    case "torrent_add": {
+      await sleep(1500);
+      if (String(a.source).includes("error")) throw "Không lấy được thông tin torrent sau 2 phút: có thể không còn ai chia sẻ.";
+      const files = [
+        { index: 0, name: "Ubuntu 24.04/ubuntu-24.04-desktop-amd64.iso", size: 6_114_656_256 },
+        { index: 1, name: "Ubuntu 24.04/SHA256SUMS", size: 202 },
+        { index: 2, name: "Ubuntu 24.04/README.txt", size: 4_096 },
+      ];
+      const id = torrents.length + 1;
+      torrents.push({
+        id,
+        name: "Ubuntu 24.04",
+        state: "paused",
+        progress: 0,
+        total: 0,
+        folder: `${a.outDir}\\Ubuntu 24.04`,
+        files,
+      });
+      return { id, name: "Ubuntu 24.04", folder: `${a.outDir}\\Ubuntu 24.04`, files, already: false };
+    }
+    case "torrent_start": {
+      const x = find();
+      x.total = x.files.filter((f) => a.files.includes(f.index)).reduce((s, f) => s + f.size, 0);
+      x.state = "downloading";
+      return null;
+    }
+    case "torrent_pause":
+      find().state = "paused";
+      return null;
+    case "torrent_resume":
+      find().state = "downloading";
+      return null;
+    case "torrent_remove":
+      torrents.splice(torrents.indexOf(find()), 1);
+      return null;
+    case "torrent_list":
+      return torrents
+        .filter((x) => x.total)
+        .map((x) => {
+          if (x.state === "downloading") {
+            x.progress = Math.min(x.total, x.progress + x.total / 40);
+            if (x.progress >= x.total) x.state = "done";
+          }
+          const speed = x.state === "downloading" ? Math.round(x.total / 40) : 0;
+          return { id: x.id, name: x.name, state: x.state, progress: x.progress, total: x.total, speed, error: null, folder: x.folder };
+        })
+        .reverse();
+  }
+}
+
 const SUBS = [
   { lang: "en", name: "English", auto: false },
   { lang: "vi", name: "Vietnamese", auto: false },
@@ -240,6 +309,13 @@ export function install() {
         case "feedback_request":
           await sleep(500);
           return fakeFeedback(a.body);
+        case "torrent_add":
+        case "torrent_start":
+        case "torrent_pause":
+        case "torrent_resume":
+        case "torrent_remove":
+        case "torrent_list":
+          return fakeTorrent(cmd, a);
         case "files_exist":
           // Giả lập file có chữ "missing" trong tên là đã bị xoá.
           return (a.paths as string[]).map((p) => !p.includes("missing"));
