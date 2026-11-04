@@ -1,0 +1,37 @@
+name: Check
+
+# Biên dịch thử phần Rust khi push lên nhánh khác main (không build bản cài, không phát hành gì).
+# Lỗi và cảnh báo của trình biên dịch được đưa lên thành annotation, xem được ngay trên trang commit.
+on:
+  push:
+    branches-ignore: [main]
+  workflow_dispatch:
+
+jobs:
+  cargo-check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # tauri::generate_context! cần thư mục dist của giao diện.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: cargo check
+        shell: bash
+        working-directory: src-tauri
+        run: |
+          set +e
+          cargo check --message-format=json > check.json
+          status=$?
+          python ../.github/scripts/annotate.py check.json
+          exit $status
