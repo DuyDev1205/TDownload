@@ -118,7 +118,7 @@ const vi = {
   "cut.from": "Từ",
   "cut.to": "Đến",
   "cut.length": "Dài {t}",
-  "cut.note": "Kéo hai đầu thanh hoặc gõ giờ (phút:giây). Cắt chính xác từng giây nên mất thêm chút thời gian xử lý; khi cắt đoạn app không tải kèm phụ đề.",
+  "cut.note": "Kéo hai đầu thanh hoặc gõ giờ (phút:giây). Điểm bắt đầu có thể sớm hơn giờ chọn vài giây; khi cắt đoạn app không tải kèm phụ đề.",
   "mac.codecNote": "Trên Mac, video trên 1080p chỉ có định dạng VP9/AV1 mà QuickTime không mở được: hãy mở bằng IINA hoặc VLC, hoặc chọn 1080p.",
   "subtitle.auto": "tự động",
 
@@ -338,7 +338,7 @@ const en: Locale = {
   "cut.from": "From",
   "cut.to": "To",
   "cut.length": "{t} long",
-  "cut.note": "Drag both ends of the bar or type times (min:sec). Cuts are exact to the second, so processing takes a little longer; subtitles aren't downloaded with a section.",
+  "cut.note": "Drag both ends of the bar or type times (min:sec). The section may start a few seconds before the chosen time; subtitles aren't downloaded with a section.",
   "mac.codecNote": "On Mac, videos above 1080p only come as VP9/AV1, which QuickTime can't open: use IINA or VLC, or pick 1080p.",
   "subtitle.auto": "auto",
 
@@ -553,7 +553,7 @@ const es: Locale = {
   "cut.from": "Desde",
   "cut.to": "Hasta",
   "cut.length": "Dura {t}",
-  "cut.note": "Arrastra los extremos de la barra o escribe los tiempos (min:seg). El corte es exacto al segundo, así que el procesado tarda un poco más; con un fragmento no se descargan subtítulos.",
+  "cut.note": "Arrastra los extremos de la barra o escribe los tiempos (min:seg). El fragmento puede empezar unos segundos antes de lo elegido; con un fragmento no se descargan subtítulos.",
   "mac.codecNote": "En Mac, los vídeos de más de 1080p solo vienen en VP9/AV1, que QuickTime no abre: usa IINA o VLC, o elige 1080p.",
   "subtitle.auto": "automático",
 
@@ -769,7 +769,7 @@ const de: Locale = {
   "cut.from": "Von",
   "cut.to": "Bis",
   "cut.length": "{t} lang",
-  "cut.note": "Ziehe die Enden der Leiste oder gib Zeiten ein (Min:Sek). Der Schnitt ist sekundengenau, die Verarbeitung dauert daher etwas länger; bei einem Abschnitt werden keine Untertitel geladen.",
+  "cut.note": "Ziehe die Enden der Leiste oder gib Zeiten ein (Min:Sek). Der Abschnitt kann ein paar Sekunden früher beginnen als gewählt; bei einem Abschnitt werden keine Untertitel geladen.",
   "mac.codecNote": "Auf dem Mac gibt es Videos über 1080p nur als VP9/AV1, die QuickTime nicht öffnet: Nutze IINA oder VLC, oder wähle 1080p.",
   "subtitle.auto": "automatisch",
 
@@ -981,7 +981,7 @@ const zh: Locale = {
   "cut.from": "从",
   "cut.to": "到",
   "cut.length": "共 {t}",
-  "cut.note": "拖动进度条两端或输入时间（分:秒）。剪切精确到秒，因此处理会稍慢；截取片段时不会一起下载字幕。",
+  "cut.note": "拖动进度条两端或输入时间（分:秒）。片段可能比所选时间早几秒开始；截取片段时不会一起下载字幕。",
   "mac.codecNote": "在 Mac 上，1080p 以上的视频只有 VP9/AV1 格式，QuickTime 无法打开：请用 IINA 或 VLC 打开，或选择 1080p。",
   "subtitle.auto": "自动",
 
@@ -1194,7 +1194,7 @@ const ja: Locale = {
   "cut.from": "開始",
   "cut.to": "終了",
   "cut.length": "長さ {t}",
-  "cut.note": "バーの両端をドラッグするか時間（分:秒）を入力してください。秒単位で正確に切り出すため処理に少し時間がかかります。一部分だけの場合は字幕をダウンロードしません。",
+  "cut.note": "バーの両端をドラッグするか時間（分:秒）を入力してください。開始位置は選んだ時間より数秒早くなることがあります。一部分だけの場合は字幕をダウンロードしません。",
   "mac.codecNote": "Mac では 1080p を超える動画は VP9/AV1 形式しかなく、QuickTime では開けません。IINA か VLC で開くか、1080p を選んでください。",
   "subtitle.auto": "自動生成",
 

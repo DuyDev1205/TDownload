@@ -101,13 +101,12 @@ fn quality_args(mode: Mode, quality: Option<u32>) -> Vec<String> {
     }
 }
 
-/// Chỉ tải một đoạn [bắt đầu, kết thúc] (giây). Cắt đúng từng giây (--force-keyframes-at-cuts) nên ffmpeg phải mã hoá
-/// lại phần đầu đoạn, chậm hơn một chút.
+/// Chỉ tải một đoạn [bắt đầu, kết thúc] (giây). ffmpeg chép thẳng dữ liệu, không mã hoá lại nên nhanh (đoạn 10 phút chỉ
+/// mất cỡ thời gian tải); đổi lại điểm bắt đầu rơi vào khung chính gần nhất, có thể sớm hơn giờ chọn vài giây.
+/// (--force-keyframes-at-cuts cắt đúng từng giây nhưng phải mã hoá lại cả đoạn, đoạn dài chạy rất lâu.)
 fn section_args(section: Option<[f64; 2]>) -> Vec<String> {
     match section {
-        Some([start, end]) if end > start => {
-            vec!["--download-sections".into(), format!("*{start}-{end}"), "--force-keyframes-at-cuts".into()]
-        }
+        Some([start, end]) if end > start => vec!["--download-sections".into(), format!("*{start}-{end}")],
         _ => vec![],
     }
 }
@@ -360,6 +359,8 @@ struct Done {
 
 #[derive(Default)]
 struct LineState {
+    /// Độ dài đoạn cắt (giây). Tải một đoạn thì ffmpeg tải thay yt-dlp và chỉ báo "time=" đã xử lý tới đâu.
+    section_len: Option<f64>,
     format_id: String,
     part: u32,
     file: Option<String>,
@@ -436,7 +437,10 @@ pub async fn start_download(
     let mut child = cmd.spawn().map_err(|e| t(i18n::RUN_YTDLP).replace("{e}", &e.to_string()))?;
     jobs.0.lock().unwrap().insert(id.clone(), Job { pid: child.id().unwrap_or(0), canceled: false });
 
-    let state = Arc::new(Mutex::new(LineState::default()));
+    let state = Arc::new(Mutex::new(LineState {
+        section_len: section.map(|[start, end]| end - start).filter(|len| *len > 0.0),
+        ..Default::default()
+    }));
     let stdout = pipe(child.stdout.take().unwrap(), app.clone(), id.clone(), state.clone());
     let stderr = pipe(child.stderr.take().unwrap(), app.clone(), id.clone(), state.clone());
 
@@ -468,14 +472,29 @@ where
     R: AsyncRead + Unpin + Send + 'static,
 {
     tauri::async_runtime::spawn(async move {
+        // Tách dòng ở cả \n lẫn \r: ffmpeg cập nhật tiến độ bằng \r (ghi đè dòng cũ) chứ không xuống dòng.
         let mut reader = BufReader::new(reader);
-        let mut buf = Vec::new();
+        let mut line = Vec::new();
         loop {
-            buf.clear();
-            match reader.read_until(b'\n', &mut buf).await {
-                Ok(0) | Err(_) => break,
-                Ok(_) => handle_line(&app, &id, &state, String::from_utf8_lossy(&buf).trim()),
+            let chunk = match reader.fill_buf().await {
+                Ok(chunk) if !chunk.is_empty() => chunk,
+                _ => break,
+            };
+            let len = chunk.len();
+            for &b in chunk {
+                if b == b'\n' || b == b'\r' {
+                    if !line.is_empty() {
+                        handle_line(&app, &id, &state, String::from_utf8_lossy(&line).trim());
+                        line.clear();
+                    }
+                } else {
+                    line.push(b);
+                }
             }
+            reader.consume(len);
+        }
+        if !line.is_empty() {
+            handle_line(&app, &id, &state, String::from_utf8_lossy(&line).trim());
         }
     })
 }
@@ -527,6 +546,21 @@ fn handle_line(app: &AppHandle, id: &str, state: &Mutex<LineState>, line: &str) 
         );
     } else if let Some(path) = line.strip_prefix("FILE|") {
         s.file = Some(path.to_owned());
+    } else if let Some((done, speed)) = s.section_len.and_then(|_| ffmpeg_progress(line)) {
+        // Tải một đoạn: % = thời lượng ffmpeg đã xử lý / độ dài đoạn; còn lại = phần chưa xử lý / tốc độ (vd. 10.4x).
+        let len = s.section_len.unwrap_or(1.0);
+        let _ = app.emit(
+            "dl-progress",
+            Progress {
+                id: id.to_owned(),
+                stage: "download",
+                part: 1,
+                percent: Some((done / len * 100.0).min(100.0)),
+                speed: None,
+                eta: speed.filter(|x| *x > 0.0).map(|x| ((len - done) / x).max(0.0)),
+                label: None,
+            },
+        );
     } else if !line.is_empty() {
         if line.contains("Unable to download video subtitles") {
             s.subtitle_failed = true;
@@ -575,6 +609,18 @@ fn kill_tree(pid: u32) {
     }
 }
 
+/// Đọc dòng tiến độ của ffmpeg, ví dụ "frame= 2890 ... time=00:02:00.01 bitrate=... speed=10.4x":
+/// trả về (số giây đã xử lý, tốc độ so với thời gian thực).
+fn ffmpeg_progress(line: &str) -> Option<(f64, Option<f64>)> {
+    let field = |key: &str| line.split(key).nth(1)?.split_whitespace().next();
+    let mut secs = 0.0;
+    for part in field("time=")?.split(':') {
+        secs = secs * 60.0 + part.parse::<f64>().ok()?;
+    }
+    let speed = field("speed=").and_then(|v| v.trim_end_matches('x').parse::<f64>().ok());
+    Some((secs, speed))
+}
+
 /// Lấy dòng lỗi cuối của yt-dlp và thêm gợi ý dễ hiểu cho các lỗi hay gặp.
 fn friendly_error(log: &str) -> String {
     let detail = log
@@ -593,7 +639,10 @@ fn friendly_error(log: &str) -> String {
             && ["chrome", "edge", "brave", "decrypt", "could not copy"].iter().any(|k| low.contains(k)));
     let hint = if browser_cookie_error {
         t(i18n::HINT_BROWSER_COOKIES)
-    } else if ["login", "log in", "sign in", "cookies", "private", "registered users", "not a bot"].iter().any(|k| low.contains(k)) {
+    } else if ["login", "log in", "sign in", "cookies", "private", "registered users", "not a bot"].iter().any(|k| low.contains(k))
+        // Facebook chặn video cần đăng nhập (nhóm kín, reel riêng tư) bằng trang đăng nhập: yt-dlp chỉ báo "Cannot parse data".
+        || (low.contains("[facebook]") && low.contains("cannot parse data"))
+    {
         t(i18n::HINT_LOGIN)
     } else if ["resolving timed out", "could not resolve", "getaddrinfo", "timed out", "connection refused"].iter().any(|k| low.contains(k)) {
         t(i18n::HINT_NETWORK)
