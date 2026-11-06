@@ -404,7 +404,7 @@ pub async fn start_download(
     quality: Option<u32>,
     title: Option<String>,
     subtitle: Option<Subtitle>,
-    /// Phụ đề "chỉ chữ": tải xong đổi file .srt thành .txt gộp thành một đoạn (xem transcript.rs).
+    // Phụ đề "chỉ chữ": tải xong đổi file .srt thành .txt gộp thành một đoạn (xem transcript.rs).
     subtitle_text: Option<bool>,
     section: Option<[f64; 2]>,
     out_dir: String,
