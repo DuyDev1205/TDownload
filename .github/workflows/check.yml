@@ -35,3 +35,14 @@ jobs:
           status=$?
           python ../.github/scripts/annotate.py check.json
           exit $status
+
+      # Chạy các bài kiểm tra Rust; lỗi thì đưa phần cuối log lên thành annotation (log của job không xem được công khai).
+      - name: cargo test
+        shell: bash
+        working-directory: src-tauri
+        run: |
+          if ! cargo test --lib > test.log 2>&1; then
+            python -c "t=open('test.log',encoding='utf-8',errors='replace').read()[-6000:];print('::error title=cargo test::'+t.replace('%','%25').replace('\r','').replace('\n','%0A'))"
+            exit 1
+          fi
+          grep -E "^test |test result" test.log

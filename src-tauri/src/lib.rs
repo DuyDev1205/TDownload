@@ -4,6 +4,7 @@ mod feedback;
 mod i18n;
 mod login;
 mod proxy;
+mod transcript;
 
 use tauri::Manager;
 

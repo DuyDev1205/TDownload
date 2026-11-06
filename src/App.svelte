@@ -56,6 +56,8 @@
     title: string | null;
     /** Không có ở lịch sử lưu từ bản cũ. */
     subtitle?: Subtitle | null;
+    /** Phụ đề "chỉ chữ": lưu .txt gộp thành một đoạn thay cho .srt có mốc thời gian. */
+    subtitleText?: boolean;
     /** Ghi chú khi tải xong nhưng thiếu phần phụ (ví dụ phụ đề bị chặn). */
     note?: string | null;
     /** Chỉ tải đoạn [bắt đầu, kết thúc] (giây); không có hoặc null là cả video. */
@@ -123,6 +125,8 @@
   let customTitle = $state("");
   /** Vị trí phụ đề đã chọn trong info.subtitles; -1 là không tải phụ đề. */
   let subtitleIndex = $state(-1);
+  /** Kiểu phụ đề người dùng chọn lần trước: có mốc thời gian (.srt) hay chỉ chữ (.txt). */
+  let subtitleText = $state(load("subtitleText", "0") === "1");
   // Chỉ tải một đoạn của video (giây).
   let cutOn = $state(false);
   let cutStart = $state(0);
@@ -227,6 +231,7 @@
     save("outDir", outDir);
     save("cookieKind", cookieKind);
     save("cookieFile", cookieFile);
+    save("subtitleText", subtitleText ? "1" : "0");
   });
 
   onMount(() => {
@@ -575,6 +580,7 @@
     const key = videoKey(vi.url);
     const af = m === "audio" ? audioFormat : null;
     const q = m === "audio" ? null : quality;
+    const asText = !!subtitle && subtitleText;
     const same = items.find(
       (i) =>
         videoKey(i.info.url) === key &&
@@ -582,7 +588,8 @@
         i.audioFormat === af &&
         i.quality === q &&
         (i.subtitle?.lang ?? null) === (subtitle?.lang ?? null) &&
-        JSON.stringify(i.section ?? null) === JSON.stringify(section),
+        JSON.stringify(i.section ?? null) === JSON.stringify(section) &&
+        (i.subtitleText ?? false) === asText,
     );
     if (same && ["queued", "downloading", "processing"].includes(same.status)) return "active";
     if (same?.status === "done" && !same.missing) return "done";
@@ -595,6 +602,7 @@
       quality: m === "audio" ? null : quality,
       title,
       subtitle,
+      subtitleText: asText,
       section,
       note: null,
       status: "queued",
@@ -674,6 +682,7 @@
       quality: it.quality,
       title: it.title,
       subtitle: it.subtitle ?? null,
+      subtitleText: it.subtitleText ?? false,
       section: it.section ?? null,
       outDir,
       cookies,
@@ -805,7 +814,10 @@
     const parts = [t(`mode.${it.mode}.title`)];
     if (it.audioFormat) parts.push(audioLabel(it.audioFormat));
     else if (it.quality) parts.push(fmtQuality(it.quality));
-    if (it.subtitle) parts.push(t("item.subtitle", { name: subtitleName(it.subtitle) }));
+    if (it.subtitle) {
+      const name = t("item.subtitle", { name: subtitleName(it.subtitle) });
+      parts.push(it.subtitleText ? `${name} (${t("sub.textShort")})` : name);
+    }
     if (it.section) parts.push(`✂ ${fmtDuration(it.section[0]) || "0:00"}–${fmtDuration(it.section[1])}`);
     return parts.join(" · ");
   }
@@ -1198,10 +1210,21 @@
             {/each}
           </div>
           {#if subtitleIndex >= 0}
+            <div class="qualities" role="radiogroup" aria-label={t("sub.style")}>
+              <span class="label">{t("sub.style")}</span>
+              <button role="radio" aria-checked={!subtitleText} class:selected={!subtitleText} onclick={() => (subtitleText = false)}>
+                {t("sub.timed")}
+              </button>
+              <button role="radio" aria-checked={subtitleText} class:selected={subtitleText} onclick={() => (subtitleText = true)}>
+                {t("sub.text")}
+              </button>
+            </div>
             <p class="note format-hint">
-              {effectiveMode === "audio"
-                ? t("preview.subtitleAudio")
-                : t("preview.subtitleVideo")}
+              {#if subtitleText}
+                {effectiveMode === "audio" ? t("preview.subtitleTextAudio") : t("preview.subtitleTextVideo")}
+              {:else}
+                {effectiveMode === "audio" ? t("preview.subtitleAudio") : t("preview.subtitleVideo")}
+              {/if}
             </p>
           {/if}
         {/if}

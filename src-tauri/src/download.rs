@@ -374,14 +374,19 @@ struct LineState {
 /// yt-dlp vẫn trả mã lỗi nên app vẫn biết.
 fn subtitle_args(mode: Mode, subtitle: Option<&Subtitle>) -> Vec<String> {
     let Some(s) = subtitle else { return vec![] };
-    let mut args: Vec<String> = vec![
-        if s.auto { "--write-auto-subs" } else { "--write-subs" }.into(),
+    // Luôn có --write-subs: yt-dlp chỉ giữ file phụ đề cạnh video sau khi gắn (--embed-subs) khi có cờ này;
+    // chỉ --write-auto-subs thì file .srt bị xoá. Cùng mã ngôn ngữ mà có cả phụ đề người làm thì yt-dlp lấy bản đó.
+    let mut args: Vec<String> = vec!["--write-subs".into()];
+    if s.auto {
+        args.push("--write-auto-subs".into());
+    }
+    args.extend([
         "--sub-langs".into(),
         s.lang.clone(),
         "--convert-subs".into(),
         "srt".into(),
         "-i".into(),
-    ];
+    ]);
     if !matches!(mode, Mode::Audio) {
         args.push("--embed-subs".into());
     }
@@ -399,6 +404,8 @@ pub async fn start_download(
     quality: Option<u32>,
     title: Option<String>,
     subtitle: Option<Subtitle>,
+    /// Phụ đề "chỉ chữ": tải xong đổi file .srt thành .txt gộp thành một đoạn (xem transcript.rs).
+    subtitle_text: Option<bool>,
     section: Option<[f64; 2]>,
     out_dir: String,
     cookies: String,
@@ -407,6 +414,7 @@ pub async fn start_download(
     let title = title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     // Cắt đoạn thì phụ đề (của cả video) sẽ lệch giờ: không tải kèm.
     let subtitle = if section_args(section).is_empty() { subtitle } else { None };
+    let wants_text = subtitle.is_some() && subtitle_text.unwrap_or(false);
     let suffix = section_suffix(section);
     let template = if title.is_some() {
         format!("{}{suffix}.%(ext)s", CUSTOM_OUTPUT_TEMPLATE.trim_end_matches(".%(ext)s"))
@@ -452,6 +460,12 @@ pub async fn start_download(
         let _ = stderr.await;
 
         let canceled = app.state::<Jobs>().0.lock().unwrap().remove(&id).is_some_and(|j| j.canceled);
+        let file = state.lock().unwrap().file.clone();
+        if success && !canceled && wants_text {
+            if let Some(file) = &file {
+                crate::transcript::convert_beside(std::path::Path::new(file));
+            }
+        }
         let done = {
             let s = state.lock().unwrap();
             Done {
