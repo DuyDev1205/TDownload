@@ -275,6 +275,80 @@ select:focus {
   background: var(--card);
 }
 
+/* Chỉ tải một đoạn: thanh kéo hai đầu (hai input range chồng lên nhau) và ô nhập giờ. */
+.cut {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cut-range {
+  position: relative;
+  height: 22px;
+}
+
+.cut-range::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--line) var(--a),
+    var(--accent) var(--a),
+    var(--accent) var(--b),
+    var(--line) var(--b)
+  );
+}
+
+.cut-range input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  pointer-events: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.cut-range input::-webkit-slider-runnable-track {
+  background: none;
+}
+
+.cut-range input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  pointer-events: auto;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--card);
+  box-shadow: 0 0 0 1px var(--accent);
+  cursor: pointer;
+}
+
+.cut-times {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.cut-times input {
+  width: 88px;
+  margin-left: 6px;
+  padding: 6px 8px;
+  text-align: center;
+}
+
 .ask-name {
   display: flex;
   align-items: center;

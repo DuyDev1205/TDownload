@@ -58,6 +58,8 @@
     subtitle?: Subtitle | null;
     /** Ghi chú khi tải xong nhưng thiếu phần phụ (ví dụ phụ đề bị chặn). */
     note?: string | null;
+    /** Chỉ tải đoạn [bắt đầu, kết thúc] (giây); không có hoặc null là cả video. */
+    section?: [number, number] | null;
     status: Status;
     percent: number | null;
     speed: number | null;
@@ -111,6 +113,16 @@
   let customTitle = $state("");
   /** Vị trí phụ đề đã chọn trong info.subtitles; -1 là không tải phụ đề. */
   let subtitleIndex = $state(-1);
+  // Chỉ tải một đoạn của video (giây).
+  let cutOn = $state(false);
+  let cutStart = $state(0);
+  let cutEnd = $state(0);
+  /** Đoạn sẽ tải, hoặc null nếu tải cả video (chưa bật cắt, hoặc đoạn chọn chính là cả video). */
+  const section = $derived<[number, number] | null>(
+    cutOn && info?.duration && cutEnd > cutStart && (cutStart > 0 || cutEnd < Math.floor(info.duration))
+      ? [cutStart, cutEnd]
+      : null,
+  );
   let urlInput = $state<HTMLInputElement>();
 
   // Link playlist/kênh: danh sách video kèm ô chọn.
@@ -348,6 +360,7 @@
     notice = "";
     customTitle = "";
     subtitleIndex = -1;
+    cutOn = false;
     quality = null;
   }
 
@@ -387,6 +400,8 @@
       } else {
         info = result;
         customTitle = result.title;
+        cutStart = 0;
+        cutEnd = Math.floor(result.duration ?? 0);
         // yt-dlp không mở được playlist (thường do để Riêng tư) thì lặng lẽ trả về một video.
         if (wholeList) {
           fetchError = t("fetch.privatePlaylist");
@@ -397,6 +412,22 @@
     } finally {
       fetching = false;
     }
+  }
+
+  /** "1:05", "01:02:03" hoặc "65" thành số giây; sai định dạng thì null. */
+  function parseClock(text: string): number | null {
+    const parts = text.trim().split(":");
+    if (parts.length > 3 || parts.some((p) => !/^\d+(\.\d+)?$/.test(p))) return null;
+    return parts.reduce((sum, p) => sum * 60 + Number(p), 0);
+  }
+
+  /** Gõ giờ bắt đầu/kết thúc đoạn cắt; giờ sai hoặc làm đoạn rỗng thì trả ô về giá trị cũ. */
+  function setCut(e: Event, which: "start" | "end", total: number) {
+    const input = e.currentTarget as HTMLInputElement;
+    const v = parseClock(input.value);
+    if (which === "start" && v != null && v < cutEnd) cutStart = Math.floor(v);
+    else if (which === "end" && v != null && v > cutStart && v <= total) cutEnd = Math.floor(v);
+    input.value = fmtDuration(which === "start" ? cutStart : cutEnd) || "0:00";
   }
 
   /** Mức chất lượng cao nhất của video cho chế độ đang chọn (Tương thích chỉ tới 1080p). */
@@ -413,7 +444,8 @@
       effectiveMode,
       chosenQuality,
       title,
-      info.subtitles[subtitleIndex] ?? null,
+      section ? null : (info.subtitles[subtitleIndex] ?? null),
+      section,
     );
     // Trùng thì giữ phần xem trước để người dùng chọn cách tải khác nếu muốn.
     if (added !== "added") {
@@ -497,6 +529,7 @@
     quality: number | null,
     title: string | null = null,
     subtitle: Subtitle | null = null,
+    section: [number, number] | null = null,
   ): "added" | "active" | "done" {
     const key = videoKey(vi.url);
     const af = m === "audio" ? audioFormat : null;
@@ -507,7 +540,8 @@
         i.mode === m &&
         i.audioFormat === af &&
         i.quality === q &&
-        (i.subtitle?.lang ?? null) === (subtitle?.lang ?? null),
+        (i.subtitle?.lang ?? null) === (subtitle?.lang ?? null) &&
+        JSON.stringify(i.section ?? null) === JSON.stringify(section),
     );
     if (same && ["queued", "downloading", "processing"].includes(same.status)) return "active";
     if (same?.status === "done" && !same.missing) return "done";
@@ -520,6 +554,7 @@
       quality: m === "audio" ? null : quality,
       title,
       subtitle,
+      section,
       note: null,
       status: "queued",
       percent: null,
@@ -598,6 +633,7 @@
       quality: it.quality,
       title: it.title,
       subtitle: it.subtitle ?? null,
+      section: it.section ?? null,
       outDir,
       cookies,
     };
@@ -729,6 +765,7 @@
     if (it.audioFormat) parts.push(audioLabel(it.audioFormat));
     else if (it.quality) parts.push(fmtQuality(it.quality));
     if (it.subtitle) parts.push(t("item.subtitle", { name: subtitleName(it.subtitle) }));
+    if (it.section) parts.push(`✂ ${fmtDuration(it.section[0]) || "0:00"}–${fmtDuration(it.section[1])}`);
     return parts.join(" · ");
   }
 </script>
@@ -1042,8 +1079,60 @@
             {/each}
           </div>
         {/if}
+        {#if isMac && effectiveMode === "best" && (chosenQuality ?? 0) > 1080}
+          <p class="note format-hint">{t("mac.codecNote")}</p>
+        {/if}
 
-        {#if info.subtitles.length}
+        {#if info.duration}
+          <div class="qualities" role="radiogroup" aria-label={t("cut.label")}>
+            <span class="label">{t("cut.label")}</span>
+            <button role="radio" aria-checked={!cutOn} class:selected={!cutOn} onclick={() => (cutOn = false)}>
+              {t("cut.full")} · {fmtDuration(info.duration)}
+            </button>
+            <button role="radio" aria-checked={cutOn} class:selected={cutOn} onclick={() => (cutOn = true)}>
+              {t("cut.part")}
+            </button>
+          </div>
+          {#if cutOn}
+            {@const total = Math.floor(info.duration)}
+            <div class="cut">
+              <div class="cut-range" style:--a="{(cutStart / total) * 100}%" style:--b="{(cutEnd / total) * 100}%">
+                <input
+                  type="range"
+                  min="0"
+                  max={total}
+                  step="1"
+                  bind:value={cutStart}
+                  oninput={() => (cutStart = Math.min(cutStart, cutEnd - 1))}
+                  aria-label={t("cut.from")}
+                />
+                <input
+                  type="range"
+                  min="0"
+                  max={total}
+                  step="1"
+                  bind:value={cutEnd}
+                  oninput={() => (cutEnd = Math.max(cutEnd, cutStart + 1))}
+                  aria-label={t("cut.to")}
+                />
+              </div>
+              <div class="cut-times">
+                <label>
+                  {t("cut.from")}
+                  <input value={fmtDuration(cutStart) || "0:00"} onchange={(e) => setCut(e, "start", total)} spellcheck="false" />
+                </label>
+                <label>
+                  {t("cut.to")}
+                  <input value={fmtDuration(cutEnd)} onchange={(e) => setCut(e, "end", total)} spellcheck="false" />
+                </label>
+                <span class="muted">{t("cut.length", { t: fmtDuration(cutEnd - cutStart) })}</span>
+              </div>
+              <p class="note format-hint">{t("cut.note")}</p>
+            </div>
+          {/if}
+        {/if}
+
+        {#if info.subtitles.length && !cutOn}
           <div class="qualities" role="radiogroup" aria-label={t("preview.subtitles")}>
             <span class="label">{t("preview.subtitles")}</span>
             <button role="radio" aria-checked={subtitleIndex < 0} class:selected={subtitleIndex < 0} onclick={() => (subtitleIndex = -1)}>

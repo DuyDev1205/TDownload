@@ -89,10 +89,39 @@ fn mode_args(mode: Mode, audio: AudioFormat) -> Vec<&'static str> {
 }
 
 /// Chọn bản có độ phân giải (cạnh ngắn) lớn nhất không vượt quá `quality`; không có thì lấy bản nhỏ nhất trên mức đó.
+/// Trên Mac, chế độ Video còn ưu tiên H.264 + AAC ở cùng độ phân giải vì QuickTime không đọc được VP9/AV1/Opus;
+/// YouTube chỉ có H.264 tới 1080p nên 2K/4K/8K vẫn là VP9/AV1 (giao diện nhắc mở bằng IINA/VLC).
 fn quality_args(mode: Mode, quality: Option<u32>) -> Vec<String> {
-    match (mode, quality) {
-        (Mode::Audio, _) | (_, None) => vec![],
-        (_, Some(q)) => vec!["-S".into(), format!("res:{q}")],
+    let res = quality.map_or_else(|| "res".to_string(), |q| format!("res:{q}"));
+    match mode {
+        Mode::Audio => vec![],
+        Mode::Best if cfg!(target_os = "macos") => vec!["-S".into(), format!("{res},vcodec:h264,acodec:aac")],
+        _ if quality.is_some() => vec!["-S".into(), res],
+        _ => vec![],
+    }
+}
+
+/// Chỉ tải một đoạn [bắt đầu, kết thúc] (giây). Cắt đúng từng giây (--force-keyframes-at-cuts) nên ffmpeg phải mã hoá
+/// lại phần đầu đoạn, chậm hơn một chút.
+fn section_args(section: Option<[f64; 2]>) -> Vec<String> {
+    match section {
+        Some([start, end]) if end > start => {
+            vec!["--download-sections".into(), format!("*{start}-{end}"), "--force-keyframes-at-cuts".into()]
+        }
+        _ => vec![],
+    }
+}
+
+/// Đuôi tên file của đoạn cắt, ví dụ " (1m05s-2m30s)", để không ghi đè bản tải cả video.
+fn section_suffix(section: Option<[f64; 2]>) -> String {
+    let clock = |s: f64| {
+        let s = s.round() as u64;
+        let (h, m, s) = (s / 3600, s / 60 % 60, s % 60);
+        if h > 0 { format!("{h}h{m:02}m{s:02}s") } else { format!("{m}m{s:02}s") }
+    };
+    match section {
+        Some([start, end]) if end > start => format!(" ({}-{})", clock(start), clock(end)),
+        _ => String::new(),
     }
 }
 
@@ -368,10 +397,19 @@ pub async fn start_download(
     quality: Option<u32>,
     title: Option<String>,
     subtitle: Option<Subtitle>,
+    section: Option<[f64; 2]>,
     out_dir: String,
     cookies: String,
 ) -> Result<(), String> {
     let title = title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+    // Cắt đoạn thì phụ đề (của cả video) sẽ lệch giờ: không tải kèm.
+    let subtitle = if section_args(section).is_empty() { subtitle } else { None };
+    let suffix = section_suffix(section);
+    let template = if title.is_some() {
+        format!("{}{suffix}.%(ext)s", CUSTOM_OUTPUT_TEMPLATE.trim_end_matches(".%(ext)s"))
+    } else {
+        format!("{}{suffix}.%(ext)s", OUTPUT_TEMPLATE.trim_end_matches(".%(ext)s"))
+    };
     let bin = deps::bin_dir(&app)?;
     let mut cmd = deps::command(&app, "yt-dlp")?;
     cmd.args(["--no-playlist", "--newline", "--progress", "--no-mtime", "--embed-metadata"])
@@ -379,7 +417,7 @@ pub async fn start_download(
         .arg(&bin)
         .arg("-P")
         .arg(&out_dir)
-        .args(["-o", if title.is_some() { CUSTOM_OUTPUT_TEMPLATE } else { OUTPUT_TEMPLATE }])
+        .args(["-o", template.as_str()])
         .args(title_args(title.as_deref()))
         .args(["--progress-template", DOWNLOAD_PROGRESS])
         .args(["--progress-template", POSTPROCESS_PROGRESS])
@@ -389,6 +427,7 @@ pub async fn start_download(
         .args(mode_args(mode, audio_format.unwrap_or(AudioFormat::Original)))
         .args(quality_args(mode, quality))
         .args(subtitle_args(mode, subtitle.as_ref()))
+        .args(section_args(section))
         .arg("--")
         .arg(&url)
         .stdout(Stdio::piped())

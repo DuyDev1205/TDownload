@@ -93,6 +93,8 @@ export const startDownload = (args: {
   /** Tên người dùng tự đặt; null là giữ tiêu đề gốc. */
   title: string | null;
   subtitle: Subtitle | null;
+  /** Chỉ tải đoạn [bắt đầu, kết thúc] (giây); null là cả video. */
+  section: [number, number] | null;
   outDir: string;
   cookies: string;
 }) =>
