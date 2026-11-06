@@ -102,6 +102,12 @@ export const startDownload = (args: {
 export const cancelDownload = (id: string) => invoke<void>("cancel_download", { id });
 export const filesExist = (paths: string[]) => invoke<boolean[]>("files_exist", { paths });
 
+/** Mở cửa sổ đăng nhập trang web ngay trong app; đóng cửa sổ thì có sự kiện "login-closed". */
+export const loginOpen = (url: string) => invoke<void>("login_open", { url });
+/** Đăng xuất mọi trang đã đăng nhập trong app (xoá cookie), trả về số cookie đã xoá. */
+export const loginClear = () => invoke<number>("login_clear");
+export const onLoginClosed = (cb: () => void) => listen("login-closed", () => cb());
+
 export const onDepsProgress = (cb: (p: DepsProgress) => void) => listen<DepsProgress>("deps-progress", (e) => cb(e.payload));
 export const onProgress = (cb: (p: DlProgress) => void) => listen<DlProgress>("dl-progress", (e) => cb(e.payload));
 export const onDone = (cb: (d: DlDone) => void) => listen<DlDone>("dl-done", (e) => cb(e.payload));

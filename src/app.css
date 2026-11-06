@@ -275,6 +275,15 @@ select:focus {
   background: var(--card);
 }
 
+/* Nút mở cửa sổ đăng nhập dưới thông báo lỗi. */
+.login-ask {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
 /* Chỉ tải một đoạn: thanh kéo hai đầu (hai input range chồng lên nhau) và ô nhập giờ. */
 .cut {
   display: flex;

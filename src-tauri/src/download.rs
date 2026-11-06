@@ -205,6 +205,7 @@ pub async fn fetch_info(
     cookies: String,
     playlist: Option<bool>,
 ) -> Result<FetchResult, String> {
+    let cookies = crate::login::resolve(&app, cookies).await?;
     // --no-playlist: link video kèm &list=... vẫn là một video; link chỉ là playlist/kênh thì trả về danh sách.
     // `playlist`: app gửi khi link video kèm &list=... để hiện cả danh sách cho người dùng chọn.
     // --flat-playlist: chỉ đọc danh sách (tiêu đề, link) chứ không mở từng video, nên playlist dài vẫn nhanh.
@@ -402,6 +403,7 @@ pub async fn start_download(
     out_dir: String,
     cookies: String,
 ) -> Result<(), String> {
+    let cookies = crate::login::resolve(&app, cookies).await?;
     let title = title.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
     // Cắt đoạn thì phụ đề (của cả video) sẽ lệch giờ: không tải kèm.
     let subtitle = if section_args(section).is_empty() { subtitle } else { None };

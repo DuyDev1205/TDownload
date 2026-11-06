@@ -2,6 +2,7 @@ mod deps;
 mod download;
 mod feedback;
 mod i18n;
+mod login;
 mod proxy;
 
 use tauri::Manager;
@@ -40,6 +41,8 @@ pub fn run() {
             download::files_exist,
             feedback::feedback_request,
             i18n::set_language,
+            login::login_open,
+            login::login_clear,
         ])
         .build(tauri::generate_context!())
         .expect("không khởi động được ứng dụng")

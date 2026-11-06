@@ -140,6 +140,24 @@ pub const HINT_SITE_CHANGED: Text = [
     "サイトが変更された可能性があります。設定 → yt-dlp をアップデート してから、もう一度ダウンロードしてください。",
 ];
 
+// Cửa sổ đăng nhập (login.rs).
+pub const LOGIN_TITLE: Text = [
+    "Đăng nhập — đăng nhập xong thì đóng cửa sổ này",
+    "Sign in — close this window when you're done",
+    "Iniciar sesión — cierra esta ventana cuando termines",
+    "Anmelden — schließe dieses Fenster, wenn du fertig bist",
+    "登录 — 完成后关闭此窗口",
+    "ログイン — 終わったらこのウィンドウを閉じてください",
+];
+pub const LOGIN_BAD_URL: Text = [
+    "Link không hợp lệ để mở trang đăng nhập.",
+    "This link can't be opened for signing in.",
+    "Este enlace no se puede abrir para iniciar sesión.",
+    "Dieser Link kann nicht zum Anmelden geöffnet werden.",
+    "无法用此链接打开登录页面。",
+    "このリンクではログインページを開けません。",
+];
+
 // Máy chủ góp ý (feedback.rs).
 pub const FEEDBACK_BAD_URL: Text = [
     "Địa chỉ máy chủ góp ý không hợp lệ.",

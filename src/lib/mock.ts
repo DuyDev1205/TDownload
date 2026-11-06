@@ -240,6 +240,12 @@ export function install() {
         case "feedback_request":
           await sleep(500);
           return fakeFeedback(a.body);
+        case "login_open":
+          // Giả lập: người dùng đăng nhập rồi đóng cửa sổ sau 3 giây.
+          setTimeout(() => emit("login-closed"), 3000);
+          return null;
+        case "login_clear":
+          return 12;
         case "files_exist":
           // Giả lập file có chữ "missing" trong tên là đã bị xoá.
           return (a.paths as string[]).map((p) => !p.includes("missing"));

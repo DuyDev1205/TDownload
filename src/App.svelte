@@ -86,9 +86,10 @@
   /** Tên định dạng âm thanh: "Gốc" theo ngôn ngữ đang chọn, còn lại là MP3/FLAC/WAV. */
   const audioLabel = (f: AudioFormat) => (f === "original" ? t("audio.original") : f.toUpperCase());
 
-  /** Tên trình duyệt giữ nguyên; "" và "file" đổi theo ngôn ngữ. */
+  /** Tên trình duyệt giữ nguyên; "", "app" và "file" đổi theo ngôn ngữ. */
   const COOKIE_SOURCES: [string, string][] = [
     ["", ""],
+    ["app", ""],
     ["firefox", "Firefox"],
     ["chrome", "Chrome"],
     ["edge", "Edge"],
@@ -97,7 +98,13 @@
     ["file", ""],
   ];
   const cookieLabel = (value: string, label: string) =>
-    value === "" ? t("settings.cookiesNone") : value === "file" ? t("settings.cookiesFile") : label;
+    value === ""
+      ? t("settings.cookiesNone")
+      : value === "app"
+        ? t("settings.cookiesApp")
+        : value === "file"
+          ? t("settings.cookiesFile")
+          : label;
 
   let deps = $state<DepsStatus | null>(null);
   let installing = $state(false);
@@ -109,6 +116,9 @@
   let fetchError = $state("");
   /** Thông báo nhẹ (không phải lỗi), ví dụ đã bỏ link trùng hoặc video đã tải rồi. */
   let notice = $state("");
+  /** Đang chờ người dùng đăng nhập trong cửa sổ đăng nhập; đóng cửa sổ thì tự thử lại. */
+  let loginWaiting = $state(false);
+  let logoutMsg = $state("");
   let info = $state<VideoInfo | null>(null);
   let customTitle = $state("");
   /** Vị trí phụ đề đã chọn trong info.subtitles; -1 là không tải phụ đề. */
@@ -157,8 +167,11 @@
   let outDir = $state(load("outDir", ""));
   let cookieKind = $state(load("cookieKind", ""));
   let cookieFile = $state(load("cookieFile", ""));
+  // "app": phần Rust tự xuất cookie của cửa sổ đăng nhập trong app.
   const cookies = $derived(
-    cookieKind === "file" ? (cookieFile ? `file:${cookieFile}` : "") : cookieKind ? `browser:${cookieKind}` : "",
+    cookieKind === "app"
+      ? "app"
+      : cookieKind === "file" ? (cookieFile ? `file:${cookieFile}` : "") : cookieKind ? `browser:${cookieKind}` : "",
   );
 
   let tab = $state<"download" | "feedback">("download");
@@ -223,6 +236,12 @@
       }),
       api.onProgress(onProgress),
       api.onDone(onDone),
+      api.onLoginClosed(() => {
+        if (!loginWaiting) return;
+        loginWaiting = false;
+        cookieKind = "app";
+        getInfo();
+      }),
     ];
     window.addEventListener("focus", autoPaste);
     window.addEventListener("focus", maybeCheckAppUpdate);
@@ -362,6 +381,28 @@
     subtitleIndex = -1;
     cutOn = false;
     quality = null;
+  }
+
+  /** Mở cửa sổ đăng nhập ở chính link đang dán; đóng cửa sổ thì dùng cookie đó và tự thử lại (xem onLoginClosed). */
+  async function startLogin() {
+    const link = extractUrl(url);
+    if (!link) return;
+    loginWaiting = true;
+    try {
+      await api.loginOpen(link);
+    } catch (e) {
+      loginWaiting = false;
+      fetchError = String(e);
+    }
+  }
+
+  async function logoutSites() {
+    try {
+      const n = await api.loginClear();
+      logoutMsg = t("settings.loggedOut", { n });
+    } catch (e) {
+      logoutMsg = t("common.error", { e: String(e) });
+    }
   }
 
   function clearUrl() {
@@ -936,9 +977,13 @@
         {#if cookieKind === "file"}
           <div class="value path" title={cookieFile}>{cookieFile || t("settings.noFile")}</div>
           <button onclick={chooseCookieFile}>{t("settings.choose")}</button>
+        {:else if cookieKind === "app"}
+          <div class="value"></div>
+          <button onclick={logoutSites}>{t("settings.logout")}</button>
         {/if}
       </div>
-      <p class="note">{t("settings.cookiesNote")}</p>
+      {#if logoutMsg}<p class="note">{logoutMsg}</p>{/if}
+      <p class="note">{cookieKind === "app" ? t("settings.cookiesAppNote") : t("settings.cookiesNote")}</p>
 
       <div class="row">
         <div class="label">yt-dlp</div>
@@ -1042,6 +1087,14 @@
       {/if}
 
       {#if fetchError}<p class="error">{fetchError}</p>{/if}
+      {#if loginWaiting}
+        <p class="note">{t("login.waiting")}</p>
+      {:else if fetchError && !isBatch && extractUrl(url)}
+        <div class="login-ask">
+          <button onclick={startLogin}>{t("login.button")}</button>
+          <span class="muted">{t("login.hint")}</span>
+        </div>
+      {/if}
       {#if notice}<p class="note">{notice}</p>{/if}
 
       {#if info}
