@@ -36,6 +36,9 @@ fn decode_entities(line: &str) -> String {
 
 /// Cả dòng là ghi chú âm thanh, ví dụ "(Laughter)", "[Music]", "[Âm nhạc]".
 fn is_annotation(line: &str) -> bool {
+    if line.chars().count() < 2 {
+        return false;
+    }
     let (Some(first), Some(last)) = (line.chars().next(), line.chars().last()) else { return false };
     let inner = &line[first.len_utf8()..line.len() - last.len_utf8()];
     matches!(first, '[' | '(') && matches!(last, ']' | ')') && !inner.contains([']', ')'])

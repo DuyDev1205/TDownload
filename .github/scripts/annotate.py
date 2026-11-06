@@ -13,6 +13,8 @@ def escape(text: str) -> str:
 
 
 def main(path: str) -> None:
+    # Console của máy Windows trên GitHub không phải UTF-8: lỗi có trích dòng code tiếng Việt sẽ làm print() hỏng.
+    sys.stdout.reconfigure(encoding="utf-8")
     messages = []
     with open(path, encoding="utf-8", errors="replace") as f:
         for line in f:
