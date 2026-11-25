@@ -104,6 +104,37 @@ export const startDownload = (args: {
 export const cancelDownload = (id: string) => invoke<void>("cancel_download", { id });
 export const filesExist = (paths: string[]) => invoke<boolean[]>("files_exist", { paths });
 
+// Nén video về dung lượng đích (src-tauri/src/compress.rs).
+export interface VideoProbe {
+  size: number;
+  duration: number;
+  width: number;
+  height: number;
+  fps: number;
+  audioCodec: string | null;
+  audioBps: number;
+}
+
+export interface CompressDone {
+  id: string;
+  ok: boolean;
+  canceled: boolean;
+  file: string | null;
+  size: number | null;
+  /** Độ cao đã hạ xuống khi nén mạnh (null là giữ nguyên độ phân giải). */
+  height: number | null;
+  error: string | null;
+}
+
+export const compressProbe = (path: string) => invoke<VideoProbe>("compress_probe", { path });
+/** `targetMb`: dung lượng đích, 1 MB = 1024 × 1024 byte. */
+export const compressVideo = (id: string, input: string, targetMb: number) =>
+  invoke<void>("compress_video", { id, input, targetMb });
+export const compressCancel = (id: string) => invoke<void>("compress_cancel", { id });
+export const onCompressProgress = (cb: (p: { id: string; percent: number }) => void) =>
+  listen<{ id: string; percent: number }>("compress-progress", (e) => cb(e.payload));
+export const onCompressDone = (cb: (d: CompressDone) => void) => listen<CompressDone>("compress-done", (e) => cb(e.payload));
+
 /** Mở cửa sổ đăng nhập trang web ngay trong app; đóng cửa sổ thì có sự kiện "login-closed". */
 export const loginOpen = (url: string) => invoke<void>("login_open", { url });
 /** Đăng xuất mọi trang đã đăng nhập trong app (xoá cookie), trả về số cookie đã xoá. */

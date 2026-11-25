@@ -43,6 +43,7 @@
   import { getUserName, nameAsked, setUserName, skipUserName, startUsageReport } from "./lib/usage";
   import Logo from "./lib/Logo.svelte";
   import FeedbackTab from "./lib/FeedbackTab.svelte";
+  import CompressTab from "./lib/CompressTab.svelte";
 
   type Status = "queued" | "downloading" | "processing" | "done" | "error" | "canceled";
 
@@ -178,7 +179,9 @@
       : cookieKind === "file" ? (cookieFile ? `file:${cookieFile}` : "") : cookieKind ? `browser:${cookieKind}` : "",
   );
 
-  let tab = $state<"download" | "feedback">("download");
+  let tab = $state<"download" | "compress" | "feedback">("download");
+  /** Video chuyển sang tab Nén khi bấm "Nén" ở một mục trong lịch sử tải. */
+  let compressIncoming = $state("");
   let feedbackUnseen = $state(0);
   let showSettings = $state(false);
   let themeMode = $state(getTheme());
@@ -1039,10 +1042,18 @@
       <button role="tab" aria-selected={tab === "download"} class:active={tab === "download"} onclick={() => (tab = "download")}>
         {t("tab.download")}
       </button>
+      <button role="tab" aria-selected={tab === "compress"} class:active={tab === "compress"} onclick={() => (tab = "compress")}>
+        {t("tab.compress")}
+      </button>
       <button role="tab" aria-selected={tab === "feedback"} class:active={tab === "feedback"} onclick={() => (tab = "feedback")}>
         {t("tab.feedback")}
         {#if feedbackUnseen}<span class="dot" title={t("tab.newReply")}></span>{/if}
       </button>
+    </div>
+
+    <!-- Giữ tab nén để lượt nén đang chạy vẫn cập nhật tiến độ khi đang ở tab khác. -->
+    <div class="tab-page" hidden={tab !== "compress"}>
+      <CompressTab bind:incoming={compressIncoming} />
     </div>
 
     <!-- Luôn giữ tab góp ý để nó tự kiểm tra kết quả và báo chấm đỏ cả khi đang ở tab khác. -->
@@ -1327,6 +1338,14 @@
                 {#if it.status === "done" && it.file && !it.missing}
                   <button onclick={() => openFile(it)}>{t("item.open")}</button>
                   <button onclick={() => openFile(it, true)}>{t("item.folder")}</button>
+                  {#if it.mode !== "audio"}
+                    <button
+                      onclick={() => {
+                        compressIncoming = it.file!;
+                        tab = "compress";
+                      }}>{t("compress.button")}</button
+                    >
+                  {/if}
                 {:else if it.missing}
                   <button onclick={() => retry(it)}>{t("item.redownload")}</button>
                 {:else if it.status === "error" || it.status === "canceled"}

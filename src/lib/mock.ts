@@ -109,6 +109,27 @@ function fakeFeedback(req: Record<string, any>) {
   throw "Yêu cầu không hợp lệ.";
 }
 
+// Nén giả: chạy 6 giây rồi ra file nhỏ hơn đích một chút.
+const compressCanceled = new Set<string>();
+async function fakeCompress(id: string, targetMb: number) {
+  for (let p = 0; p <= 100; p += 5) {
+    if (compressCanceled.has(id)) {
+      return emit("compress-done", { id, ok: false, canceled: true, file: null, size: null, height: null, error: null });
+    }
+    await emit("compress-progress", { id, percent: p });
+    await sleep(300);
+  }
+  await emit("compress-done", {
+    id,
+    ok: true,
+    canceled: false,
+    file: `C:\\Users\\you\\Downloads\\VIDEO TRẠM NƯỚC (${targetMb}MB).mp4`,
+    size: Math.round(targetMb * 1024 * 1024 * 0.975),
+    height: targetMb < 5 ? 720 : null,
+    error: null,
+  });
+}
+
 const SUBS = [
   { lang: "en", name: "English", auto: false },
   { lang: "vi", name: "Vietnamese", auto: false },
@@ -243,6 +264,15 @@ export function install() {
         case "login_open":
           // Giả lập: người dùng đăng nhập rồi đóng cửa sổ sau 3 giây.
           setTimeout(() => emit("login-closed"), 3000);
+          return null;
+        case "compress_probe":
+          await sleep(400);
+          return { size: 28_760_501, duration: 67.9, width: 1920, height: 1080, fps: 30, audioCodec: "aac", audioBps: 130_238 };
+        case "compress_video":
+          fakeCompress(a.id, a.targetMb);
+          return null;
+        case "compress_cancel":
+          compressCanceled.add(a.id);
           return null;
         case "login_clear":
           return 12;

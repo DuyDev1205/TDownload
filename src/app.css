@@ -275,6 +275,43 @@ select:focus {
   background: var(--card);
 }
 
+/* Nén video */
+.compress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.compress-file,
+.compress-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.compress-file .path {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.compress-actions {
+  justify-content: space-between;
+}
+
+.compress-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compress-target input {
+  width: 90px;
+  padding: 6px 8px;
+  text-align: right;
+}
+
 /* Nút mở cửa sổ đăng nhập dưới thông báo lỗi. */
 .login-ask {
   display: flex;
