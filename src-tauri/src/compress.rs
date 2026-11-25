@@ -249,7 +249,8 @@ async fn run(
         cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = cmd.spawn().map_err(err)?;
         {
-            let mut jobs = app.state::<Compressions>().0.lock().unwrap();
+            let state = app.state::<Compressions>();
+            let mut jobs = state.0.lock().unwrap();
             // Đã bị huỷ giữa 2 lượt thì dừng luôn.
             let Some(pid) = jobs.get_mut(id) else {
                 let _ = child.start_kill();
