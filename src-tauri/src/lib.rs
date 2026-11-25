@@ -1,3 +1,4 @@
+mod compress;
 mod deps;
 mod download;
 mod feedback;
@@ -32,6 +33,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(download::Jobs::default())
+        .manage(compress::Compressions::default())
         .invoke_handler(tauri::generate_handler![
             deps::deps_status,
             deps::install_deps,
@@ -44,6 +46,9 @@ pub fn run() {
             i18n::set_language,
             login::login_open,
             login::login_clear,
+            compress::compress_probe,
+            compress::compress_video,
+            compress::compress_cancel,
         ])
         .build(tauri::generate_context!())
         .expect("không khởi động được ứng dụng")
@@ -51,6 +56,7 @@ pub fn run() {
             // Đóng app thì dừng luôn các lượt tải đang chạy.
             if let tauri::RunEvent::Exit = event {
                 app.state::<download::Jobs>().kill_all();
+                app.state::<compress::Compressions>().kill_all();
             }
         });
 }

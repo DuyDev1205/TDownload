@@ -607,7 +607,7 @@ pub fn cancel_download(jobs: State<'_, Jobs>, id: String) {
 }
 
 /// Dừng yt-dlp và cả các tiến trình con của nó (ffmpeg, ...).
-fn kill_tree(pid: u32) {
+pub(crate) fn kill_tree(pid: u32) {
     if pid == 0 {
         return;
     }

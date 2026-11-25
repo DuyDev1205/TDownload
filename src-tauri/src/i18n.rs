@@ -158,6 +158,40 @@ pub const LOGIN_BAD_URL: Text = [
     "このリンクではログインページを開けません。",
 ];
 
+// Nén video (compress.rs). {mb}: dung lượng tối thiểu, {e}: lỗi gốc của ffmpeg.
+pub const COMPRESS_NOT_VIDEO: Text = [
+    "Không đọc được file này như một video.",
+    "This file couldn't be read as a video.",
+    "Este archivo no se pudo leer como vídeo.",
+    "Diese Datei konnte nicht als Video gelesen werden.",
+    "无法将此文件读取为视频。",
+    "このファイルを動画として読み込めませんでした。",
+];
+pub const COMPRESS_NOT_SMALLER: Text = [
+    "Dung lượng muốn nén phải nhỏ hơn dung lượng hiện tại của video.",
+    "The target size must be smaller than the video's current size.",
+    "El tamaño de destino debe ser menor que el tamaño actual del vídeo.",
+    "Die Zielgröße muss kleiner als die aktuelle Größe des Videos sein.",
+    "目标大小必须小于视频当前的大小。",
+    "目標サイズは動画の現在のサイズより小さくしてください。",
+];
+pub const COMPRESS_TOO_SMALL: Text = [
+    "Dung lượng này quá nhỏ so với độ dài video, hình sẽ vỡ: hãy chọn từ {mb} MB trở lên.",
+    "That size is too small for the video's length and the picture would break up: choose {mb} MB or more.",
+    "Ese tamaño es demasiado pequeño para la duración del vídeo y la imagen se rompería: elige {mb} MB o más.",
+    "Diese Größe ist für die Länge des Videos zu klein, das Bild würde zerfallen: Wähle mindestens {mb} MB.",
+    "这个大小相对视频时长太小，画面会严重失真：请选择 {mb} MB 或以上。",
+    "動画の長さに対してサイズが小さすぎ、画質が崩れます。{mb} MB 以上を選んでください。",
+];
+pub const COMPRESS_FAILED: Text = [
+    "Nén video lỗi: {e}",
+    "Compression failed: {e}",
+    "Error al comprimir el vídeo: {e}",
+    "Komprimierung fehlgeschlagen: {e}",
+    "视频压缩失败：{e}",
+    "動画の圧縮に失敗しました：{e}",
+];
+
 // Máy chủ góp ý (feedback.rs).
 pub const FEEDBACK_BAD_URL: Text = [
     "Địa chỉ máy chủ góp ý không hợp lệ.",
